@@ -1,0 +1,20 @@
+# .gitignore for Home Assistant repository
+
+# An * ensures that everything will be ignored.
+*
+
+# Whitelisted files/folders - prefixed with !
+!battery_alert/
+!garmin_livetrack/
+!hue_motion_sensor_sensitivity/
+!zone_registration/
+
+!*.yaml
+!*.md
+!*.py
+!*.png
+!*.sh
+
+!LICENSE
+!.gitignore
+
