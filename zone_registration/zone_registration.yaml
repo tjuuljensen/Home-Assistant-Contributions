@@ -1,0 +1,956 @@
+# Automated zone registration package for Home Assistant
+# zone_registration.yaml
+#
+# Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+#
+################################################
+## Changelog
+################################################
+#
+# 0.2.0 (2023-09-23)
+#   Added
+#   - Version 0.2.0 created
+#
+# 0.3.0 (2023-10-08)
+#   Added
+#   - Fully automated package with automations
+#   - Update range script
+#   - Remove single date script
+#   - Fully functional for two people & locations
+#   - scipt rewritten to use filename as paameter instead of zone
+#   - Config valid template sensor added
+# 
+################################################
+## Explainer
+################################################
+# This package is adding functionality to automatic log time in a specific zone.
+# It was written to assist in my yearly tax registration (travel deduction) by keeping a record 
+# for each day where I was at the office. 
+# As the functionality can be beneficial in several use cased, I added the option of using different 
+# zones and multiple identifiers.
+#
+################################################ 
+## Known issues
+################################################
+#
+################################################ 
+## Q&A
+################################################
+# Q: How many persons can I track?
+# A: You can track two persons using two different configurations.
+#
+# Q: Can I track two persons on the same lcation?
+# A: Yes.
+#
+# Q: Can I track two zones for the same person?
+# A: No. This is a logical constraint that I added, and can potentially be altered. Let me know if you think I should change it.
+# 
+# Q: Why can't I add more than two configs?
+# A: I store the configuration in a text field which is limited to 255 characters. 
+#    Two configs with long names get close to this limit.
+# 
+# Q: Why do you use a shell script to add and delete records in the files instead of a "clean" HA solution using shell command?
+# A: Firstly, because the shell command requires a lot of single and double quotation to work, and it was a bitch in HA.
+#    Secondly, bacause it gives me more control of the file update process.
+#
+# Q: But this is not the proper way - you should use a shell command because that is the right thing to do.
+# A: Yeah, life sucks, right? But you are free to rewrite the package and share your results. 
+#
+# Q: I am certain there is a vanilla homeassistant way to store the file in a SCV (there is). Will you change it?
+# A: No. I went down that road once. Not going there again. ;)
+#
+# Q: Why don't you have a delete functionality in your configuration?
+# A: I will add it before I starte cleaning up in my file for first time. And I will share the code afterwards.
+#
+# Q: I have an idea to your setup. This could be awesome because...
+# A: Please share your ideas. Maybe I'll consider adding it.
+#
+# Q: I have found an error in your code.
+# A: Nice. Good work. Please share your findings, and i will correct the mistakes and credit your contribution.
+#
+# Q: I did everything the documentation said, installation, requirements, ... but it still does not work.
+# A: What does not work? (be specific)
+#    Read the documentation again, read your logs, break the problem into pieces, search for  answers online. 
+#    Ask in the home assistant community groups. You will most  likely learn something along the way.  
+#    If you manage to fix it, be proud of yourself and humbly share your knowledge to others in the future. 
+#
+#
+################################################
+## Preconditions
+################################################
+# - apexchart-card
+#
+################################################ 
+## Installation
+################################################
+# 1. Place this package file on your home assistant device in the /config/packages/ directory.
+# 2. Restart your Home Assistant instance to load the package file.
+# 3. Restart your Home Assistant instance AGAIN, to execute commands in automation.zone_registration_initialize_start_values
+# 4. Add Entity cards to your Lovelace interface to access package options
+# 5. Go to the Lovelace card "Zones registration config" and select Zone, Person Entity and Zone registration config label.
+# 6. Save the config -> "Press RUN"
+# 
+#
+################################################ 
+## Lovelace config
+################################################ 
+# (Recommended) Add config below to your lovelace interface as entity cards:
+#
+#
+#type: entities
+#entities:
+#  - entity: input_select.zone_registration_config
+#  - entity: input_datetime.zone_registration_date_start
+#    name: Start
+#  - entity: input_datetime.zone_registration_date_end
+#    name: End
+#  - entity: input_boolean.zone_registration_review
+#    name: Mark for review
+#  - entity: input_text.zone_registration_comment
+#    name: Comment
+#  - entity: script.zone_registration_update_csv_from_lovelace
+#    name: Add date (use START)
+#  - entity: script.zone_registration_update_csv_range_from_lovelace_gui
+#    name: Add date range (START - END)
+#  - entity: script.zone_registration_update_csv
+#    name: Add today (quick entry)
+#  - type: divider
+#  - entity: script.zone_registration_remove_date_csv_from_lovelace
+#    name: Remove date (use START)
+#    icon: mdi:alert-octagram-outline
+#title: Zone registration editor
+#
+#
+#type: entities
+#entities:
+#  - entity: input_select.zone_registration_config
+#    name: Configurations
+#  - entity: input_boolean.zone_registration_enter
+#  - entity: input_boolean.zone_registration_leave
+#  - type: divider
+#  - entity: input_select.zones
+#  - entity: input_select.person_entities
+#  - entity: input_text.zone_registration_config_label
+#  - entity: script.zone_registration_save_config
+#    name: Save config
+#  - type: divider
+#  - entity: input_text.zone_registration_config
+#  - entity: binary_sensor.zone_registration_config_valid
+#  - type: divider
+#  - entity: automation.zone_registration_initialize_start_values
+#  - entity: automation.zone_registration_fill_input_select_with_data
+#  - entity: automation.zone_registration_auto_update_input_select_when_config_changes
+#  - entity: automation.zone_registration_register_configured_zone_events
+#title: Zone registration config
+#show_header_toggle: false
+#state_color: true
+#
+#
+#type: vertical-stack
+#cards:
+#  - type: entities
+#    entities:
+#      - entity: input_select.zone_registration_config
+#      - type: divider
+#      - entity: sensor.zone_registration_statistics
+#      - entity: sensor.zone_registration_filename
+#    title: Zone registration statistic
+#  - type: markdown
+#    content: >-
+#      Download [Zone registration
+#      CSV](/local/csv/{{states('sensor.zone_registration_filename')}})
+#
+#
+#type: vertical-stack
+#cards:
+#  - type: custom:apexcharts-card
+#    header:
+#      show: true
+#      title: Days at work current year
+#      show_states: false
+#      floating: false
+#      colorize_states: true
+#    apex_config:
+#      chart:
+#        height: 180px
+#      fill:
+#        type: gradient
+#        gradient:
+#          shadeIntensity: 0.1
+#          opacityFrom: 0.85
+#          opacityTo: 1
+#          inverseColors: true
+#          stops:
+#            - 0
+#            - 70
+#            - 100
+#    yaxis:
+#      - min: 0
+#        max: ~23
+#        apex_config:
+#          tickAmount: 5
+#    span:
+#      start: year
+#    graph_span: 338d
+#    series:
+#      - entity: sensor.zone_registration_statistics
+#        type: column
+#        color: green
+#        data_generator: |
+#          return entity.attributes.monthly.map((start, index) => {
+#            return [new Date(start["date"]).getTime(), entity.attributes.monthly[index]["days"]];
+#            });
+#        show:
+#          extremas: false
+#          legend_value: false
+#          datalabels: true
+#  - type: custom:apexcharts-card
+#    header:
+#      show: true
+#      title: Days at work last year
+#      show_states: false
+#      floating: false
+#      colorize_states: true
+#    apex_config:
+#      chart:
+#        height: 140px
+#      fill:
+#        type: gradient
+#        gradient:
+#          shadeIntensity: 0.1
+#          opacityFrom: 0.85
+#          opacityTo: 1
+#          inverseColors: true
+#          stops:
+#            - 0
+#            - 70
+#            - 100
+#    yaxis:
+#      - min: 0
+#        max: ~23
+#        apex_config:
+#          tickAmount: 2
+#    span:
+#      start: year
+#      offset: '-1y'
+#    graph_span: 338d
+#    series:
+#      - entity: sensor.zone_registration_statistics
+#        type: column
+#        color: darkgreen
+#        data_generator: |
+#          return entity.attributes.monthly.map((start, index) => {
+#            return [new Date(start["date"]).getTime(), entity.attributes.monthly[index]["days"]];
+#            });
+#        show:
+#          extremas: false
+#          legend_value: false
+#          datalabels: true
+#
+#
+################################################
+## Customize
+################################################
+
+homeassistant:
+
+  customize:
+    ################################################
+    ## Node Anchors
+    ################################################
+
+    package.node_anchors:
+      customize: &customize
+        package: 'zone_registration'
+
+    ################################################
+    ## Customize Group
+    ################################################
+
+    group.zone_registration:
+      <<: *customize
+      friendly_name: "Zone registration"
+      icon: mdi:office-building-marker
+
+    group.zone_registration_config:
+      <<: *customize
+      friendly_name: "Zone registration config"
+      icon: mdi:office-building-cog
+
+
+################################################
+## Group
+################################################
+
+group:
+
+  zone_registration:
+    entities:
+      - input_datetime.zone_registration_date
+      - input_boolean.zone_registration_review
+      - input_text.zone_registration_comment
+      - script.zone_registration_update_csv_from_lovelace
+      - script.zone_registration_update_csv_range_from_lovelace_gui
+      - script.zone_registration_update_csv
+      
+
+  zone_registration_config:
+    entities:
+      - input_select.zones
+      - input_select.person_entities
+      - input_boolean.zone_registration_enter
+      - input_boolean.zone_registration_leave
+      - automation.zone_registration_fill_input_select_with_data
+      
+
+
+################################################
+## Input Boolean
+################################################
+
+input_boolean:
+
+  zone_registration_enter:
+    name: Zone registration enter
+    icon: mdi:map-marker-radius-outline
+
+  zone_registration_leave:
+    name: Zone registration leave
+    icon: mdi:map-marker-outline
+
+  zone_registration_review:
+    name: Zone registration review
+    icon: mdi:map-marker-alert-outline
+    
+
+################################################
+## Input Text
+################################################
+
+input_text:
+
+  zone_registration_comment:
+    name: Zone registration comment
+    icon: mdi:office-building-plus
+    max: 255
+
+  zone_registration_config_label:
+    name: Zone registration config label
+    icon: mdi:map-marker-outline
+    max: 50
+
+  zone_registration_config:
+    name: Zone registration config
+    icon: mdi:map-marker-star
+    max: 255
+
+
+################################################
+## Input DateTime
+################################################
+
+input_datetime:
+
+  zone_registration_date_start:
+    name: Zone registration start date
+    icon: mdi:calendar-arrow-right
+    has_date: true
+    has_time: false
+
+  zone_registration_date_end:
+    name: Zone registration End date 
+    icon: mdi:calendar-arrow-left
+    has_date: true
+    has_time: false
+
+################################################
+## Input Select
+################################################
+
+input_select:
+
+  zones:
+    name: Zones
+    icon: mdi:map-marker-multiple
+    options:
+      - "Undefined"
+
+  person_entities: 
+    name: Person Entities
+    icon: mdi:account-multiple
+    options:
+    - "Undefined"
+
+  zone_registration_config: 
+    name: Zone registration config
+    icon: mdi:cog
+    options:
+    - "Undefined"
+
+
+################################################
+## Shell command
+################################################
+
+shell_command:
+
+  # Add zone registration to csv file
+  zone_registration: "/config/www/csv/zone_registration.sh --entry {{ entry }} --minutes {{ minutes | string }} --date {{ date | string if date is defined  }} --review {{ review }} {{ Null if comment is not defined else ' --comment \"'+comment+'\"' }} --directory {{ '/config/www/csv/' if directory is not defined else directory }} {{ filename }}" 
+
+  # Create directory csv under /config/ww - but only if /config/www exists (safeguard check)
+  create_csv_dir: 'CSVDIR=/config/www/csv; [[ -d $(dirname ${CSVDIR}) ]] && [[ ! -d ${CSVDIR} ]] && mkdir -p ${CSVDIR}'
+ 
+  # Copy zone_csv script from packages to csv directory
+  mv_zone_csv_script: 'CSVDIR=/config/www/csv/;SCRIPTFILE=/config/packages/zone_registration.sh; [[ -f ${SCRIPTFILE} ]] && [[ -d ${CSVDIR} ]] && mv ${SCRIPTFILE} ${CSVDIR}'
+
+  # Remove date from csv
+  # old command (working): 'CSVDIR=/config/www/csv/;awk "!/{{ date | string }}/" /config/www/csv/work_2023.csv'
+  rm_date_zone_csv:  "/config/www/csv/zone_registration.sh --directory {{ '/config/www/csv/' if directory is not defined else directory }} --delete {{ date }} {{ filename }}"
+
+
+################################################
+## Command line
+################################################
+
+command_line:
+
+  # Working: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:7]) | map({month: .[0].date[0:7], days: length})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:4]) | map({year: .[0].date[0:4], days: length}))}' /config/www/csv/work_2023.csv"
+  - sensor:
+      name: Zone registration statistics
+      command: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], month: .[0][0:7], year: .[0][0:4], days: length}) | group_by(.month) | map({month: .[0].month, date: (.[0].date[0:7] + \"-01\"), days: length, year: .[0].year})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], year: .[0][0:4], days: length}) | group_by(.year) | map({year: .[0].year, days: length}))}'  /config/www/csv/{{ states('sensor.zone_registration_filename') }}"
+      value_template: "{{ value_json.yearly[-1].days if value_json is defined else [] }}"
+      scan_interval: 3600  # Update hourly
+      json_attributes:
+        - monthly
+        - yearly
+
+
+################################################
+## Template sensors
+################################################
+
+template:
+    
+- sensor:
+
+    - name: Zone registration filename
+      state: > 
+        {{ ((states('input_text.zone_registration_config_label')| regex_replace(find='[^\\w]', replace='_')).replace('__','_').lower())+".csv" }}
+      icon: mdi:file-settings
+
+
+- binary_sensor: 
+    - name: Zone registration config valid
+      icon: mdi:map-marker-check
+      state: >
+        {{ not ((states('input_text.zone_registration_config') | length == 0 
+           or states('input_text.zone_registration_config') == '[]') 
+           or states.binary_sensor.zone_registration_config_valid.attributes.json == None) }} 
+      attributes:
+        json: >
+          {{ states('input_text.zone_registration_config').replace('\'','"') | from_json }}
+        zones: >
+          {{ this.attributes.json | map(attribute='zone') | list if this.attributes.json != None else [] }}
+        persons: >
+          {{ this.attributes.json | map(attribute='person') | list if this.attributes.json != None else [] }}
+
+
+################################################
+## Automation
+################################################
+
+automation:
+
+  - alias: 'Zone registration: Initialize start values'
+    description: Will run at HA start. Only need to run once. Can be disabled afterwards
+    trigger:
+    - platform: homeassistant
+      event: start
+    condition:
+    - condition: or
+      conditions:
+      - condition: state
+        entity_id: input_text.zone_registration_config
+        state: ''
+      - condition: state
+        entity_id: input_text.zone_registration_config
+        state: unknown
+      alias: If config is either not set or empty string
+    action:
+    - if:
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_text.zone_registration_config
+          state: unknown
+        - condition: state
+          entity_id: input_text.zone_registration_config
+          state: ''
+      then:
+      - service: input_text.set_value
+        data:
+          value: '[]'
+        target:
+          entity_id: input_text.zone_registration_config
+      alias: Set config to empty list if unconfigured
+    - if:
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_text.zone_registration_comment
+          state: unknown
+      then:
+      - service: input_text.set_value
+        data:
+          value: ''
+        target:
+          entity_id: input_text.zone_registration_comment
+      alias: Set comment to empty if unknown
+    - if:
+      - condition: or
+        conditions:
+        - condition: state
+          entity_id: input_text.zone_registration_config_label
+          state: unknown
+      then:
+      - service: input_text.set_value
+        data:
+          value: ''
+        target:
+          entity_id: input_text.zone_registration_config_label
+      alias: Set label to empty if unknown
+    - service: shell_command.create_csv_dir
+      data: {}
+      alias: Create CSV directory if it does not exist
+    - service: shell_command.mv_zone_csv_script
+      data: {}
+      alias: 'Move script from packages to csv directory '
+
+
+  - alias: 'Zone registration: Fill input select with data'
+    description: Populate input selects with zone and person data
+    trigger:
+    - platform: homeassistant
+      event: start
+      id: start
+    - platform: event
+      id: reload
+      event_type: call_service
+      event_data:
+        domain: input_select
+        service: reload
+    condition: []
+    action: 
+      - delay: "00:00:01"
+      - service: input_select.set_options
+        data:
+          options: "{{ states.zone | map(attribute='entity_id') | list }}"
+        target:
+          entity_id: input_select.zones
+        alias: Add zones to input select
+      - service: input_select.set_options
+        data:
+          options: "{{ states.person | map(attribute='entity_id') | list }}"
+        target:
+          entity_id: input_select.person_entities
+        alias: Add persons to input select
+      - service: input_select.set_options
+        data:
+          options: >
+            {{ states('input_text.zone_registration_config').replace('\'','\"') | from_json | map(attribute='name') | list }}
+        target:
+          entity_id: input_select.zone_registration_config
+        alias: Update config names in input select
+    mode: single
+  
+
+  - alias: 'Zone registration: Auto update input select when config changes'
+    description: Read config from UI and select zone and person
+    trigger:
+    - platform: state
+      entity_id: input_select.zone_registration_config
+    condition: []
+    action:
+    - variables:
+        selected_config: |
+          {%- set input_select_sensor = 'input_select.zone_registration_config' %}
+          {%- set options =  state_attr(input_select_sensor,'options') %}
+          {%- set options_count = options | count() %} 
+          {%- for i in range(0,options_count) %}
+            {%- set selected=options[i] %}
+            {%- if selected==states(input_select_sensor) %}
+              {{ i }}
+              {%- break %}
+            {%- endif %}
+          {%- endfor %}
+        selected_person: | 
+          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"') | from_json) %}
+          {{ options[selected_config].person }}
+        selected_zone: |
+          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"')  | from_json) %} 
+          {{ options[selected_config].zone }}
+        config_name: |
+          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"')  | from_json) %} 
+          {{ options[selected_config].name }}
+    - service: input_select.select_option
+      data:
+        option: '{{ selected_person }}'
+      target:
+        entity_id: input_select.person_entities
+    - service: input_select.select_option
+      data:
+        option: '{{ selected_zone }}'
+      target:
+        entity_id: input_select.zones
+    - service: input_text.set_value
+      data:
+        value: '{{ config_name }}'
+      target:
+        entity_id: input_text.zone_registration_config_label
+    - service: homeassistant.update_entity
+      data: {}
+      target:
+        entity_id: sensor.zone_registration_statistics
+    mode: single
+
+
+  - alias: "Zone registration: Register configured zone events"
+    description: "Test configuration and update CSV based on zone enter and leave events"
+    trigger:
+      - platform: event
+        event_type: state_changed
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.event.data.entity_id  in
+          state_attr('binary_sensor.zone_registration_config_valid','zones') }}
+        alias: Test if triggering entity id exist as part of zone configuration
+    action:
+      - variables:
+          trigger_person: >
+            {%- if trigger.event.data.new_state.state | int(0) >
+            trigger.event.data.old_state.state | int(0)  %}
+              {{ trigger.event.data.new_state.attributes.persons | first if trigger.event.data.new_state.state == 1 else
+                trigger.event.data.new_state.attributes.persons | reject('in', trigger.event.data.old_state.attributes.persons) | first }}
+            {% else %}
+              {{ trigger.event.data.old_state.attributes.persons | first if trigger.event.data.old_state.state == 1 else
+                trigger.event.data.old_state.attributes.persons | reject('in', trigger.event.data.new_state.attributes.persons) | first }}
+            {%- endif %}
+      - condition: template 
+        value_template: >
+          {{ trigger_person in state_attr('binary_sensor.zone_registration_config_valid','persons') }}
+        alias: Test if triggering person is part of zone configuration
+      - condition: template 
+        value_template: >
+          {{ ( is_state('input_boolean.zone_registration_enter','on')  
+            and trigger.event.data.new_state.state | int(0) > trigger.event.data.old_state.state | int(0) ) 
+            or ( is_state('input_boolean.zone_registration_leave','on')  
+              and trigger.event.data.new_state.state | int(0) < trigger.event.data.old_state.state | int(0) ) }}
+        alias: Test zone configuration settings for which events to act upon
+      - variables:
+          zone_config: >
+            {{ state_attr('binary_sensor.zone_registration_config_valid','json') |
+            selectattr('person','eq',trigger_person) | first}}
+          filename: |
+            {{ (zone_config.name | regex_replace(find='[^\\w]',
+            replace='_')).replace('__','_').lower()+'.csv' }}
+      - service: shell_command.zone_registration
+        data:
+          entry: auto
+          filename: "{{ filename }}"
+        alias: Update CSV file
+      - service: homeassistant.update_entity
+        data: {}
+        target:
+          entity_id: sensor.zone_registration_statistics
+    mode: single
+
+    
+################################################
+## Script
+################################################
+
+script:
+
+  zone_registration_save_config:
+    alias: 'Zone registration: Save config'
+    sequence:
+    - variables:
+        zone_registration_config: |
+          {% set config_saved=states('input_text.zone_registration_config') != 'unknown' 
+             and states('input_text.zone_registration_config') | length > 0  %}
+          
+          {%- set zone = states('input_select.zones') %}  
+          {%- set person =  states('input_select.person_entities') %}  
+          {%- set read_config = states('input_text.zone_registration_config') %}
+          {%- set zone_reg = namespace(config=[]) %}
+          {%- set read_config = [] if number_of_configs == 0 else read_config.replace('\'','"') |from_json %} 
+          {%- set number_of_configs = read_config | length %}
+
+          {%- if number_of_configs > 0 %}
+            {%- set name = states('input_text.zone_registration_config_label')%}
+          {%- elif states('input_text.zone_registration_config_label') == 'unknown' 
+                or states('input_text.zone_registration_config_label') == '' %}
+            {%- set name = "config #" + (number_of_configs+1) | string  %}
+          {% else %}
+            {%- set name = states('input_text.zone_registration_config_label') %}
+          {% endif %}
+
+          {#- Empty input text or empty array = No zone regs defined #}
+          {%- if number_of_configs==0 %}
+            {%- set zone_reg.config = [{"name" : name, "person" : person, "zone" : zone }] %}
+          {#- One zone is defined, but it has another person -> Add new #} 
+          {%- elif number_of_configs==1 and read_config.0.person != person %}
+            {%- set zone_reg.config = zone_reg.config + [read_config.0] %}
+            {%- set zone_reg.config = zone_reg.config + [{"name" : name, "person" : person, "zone" : zone }] %}
+          {#- One zone reg is defined, and has the same person -> update data #} 
+          {%- elif number_of_configs==1 and read_config.0.person == person %}
+            {%- set zone_reg.config = zone_reg.config + [{"name" : name, "person" : person, "zone" : zone }] %}
+            {#- More  than one zone reg is defined, update  data (as input text limits number of zone regs to two due to field size) #} 
+          {%- else %}
+            {%- for configured_zone in (read_config) %}
+              {%- if configured_zone.person==person %}
+                {%- set zone_reg.config = zone_reg.config + [{"name" : name, "person" : person, "zone" : zone }] %}
+              {%- else %}
+                {%- set zone_reg.config = zone_reg.config + [configured_zone] %}
+              {%- endif %}
+            {%- endfor %}
+          {%- endif %}
+          {{ zone_reg.config }}
+    - service: input_text.set_value
+      data:
+        value: '{{ zone_registration_config }}'
+      target:
+        entity_id: input_text.zone_registration_config
+      alias: Set zone reg field to new JSON string from zone_registration_config variable
+    mode: single
+    icon: mdi:map-marker-plus
+
+
+  zone_registration_update_csv:
+    alias: 'Zone registration: Update CSV'
+    fields:
+      date:
+        description: Date to save in CSV file. In case of errors, please use apostrophes.
+        example: '2023-01-01'
+        default: today
+        required: false
+      entry:
+        description: The entry mode being stored in the record. It is suggested to use
+          "auto" when updating from automations
+        example: auto
+        default: manual
+        required: false
+      minutes:
+        description: Number of minutes in zone
+        example: '182.5'
+        default: '0'
+        required: false
+      review:
+        description: Mark the record for review?
+        example: 'Y'
+        default: ''
+        required: false
+      comment:
+        description: Optinal comment to store in the record
+        example: Updated from zone automation
+        default: ''
+        required: false
+      directory:
+        description: The directory where the csv file is stored
+        example: /config/www/csv
+        default: /config/www/csv
+        required: false
+      filename:
+        description: filename of CSV file 
+        example: 'bob_work.csv'
+        required: true
+    sequence:
+    - variables:
+        date_var: '{{ iif(date is not defined, (now().strftime(''%Y-%m-%d'') | string), date ) }}'
+        entry_var: '{{ iif(entry is defined, entry, ''manual'') }}'
+        minutes_var: '{{ iif(minutes is defined, minutes, 0) }}'
+        review_var: '{{ iif(review is defined, review, "") }}'
+        comment_var: '{{ iif(comment is defined, comment, "" ) }}'
+        directory_var: '{{ iif(directory is defined, directory, ''/config/www/csv'')}}'
+        filename_var: '{{ states(''sensor.zone_registration_filename'') }}'
+      alias: define variables with default values from input
+    - choose:
+      - conditions:
+        - condition: template
+          value_template: '{{ date is not defined and comment is not defined }}'
+          alias: date and comment is undefined
+        sequence:
+        - service: shell_command.zone_registration
+          data:
+            entry: '{{ entry_var }}'
+            minutes: '{{ minutes_var }}'
+            review: '{{ review_var }}'
+            directory: '{{ directory_var }}'
+            filename: '{{ filename_var }}'
+      - conditions:
+        - condition: template
+          value_template: '{{ date is not defined and comment is defined }}'
+          alias: date is undefined and comment is defined
+        sequence:
+        - service: shell_command.zone_registration
+          data:
+            entry: '{{ entry_var }}'
+            minutes: '{{ minutes_var }}'
+            review: '{{ review_var }}'
+            directory: '{{ directory_var }}'
+            comment: '{{ comment_var }}'
+            filename: '{{ filename_var }}'
+      - conditions:
+        - condition: template
+          value_template: '{{ date is defined and comment is not defined }}'
+          alias: date is defined and comment is undefined
+        sequence:
+        - service: shell_command.zone_registration
+          data:
+            date: '{{ date_var[0:10] }}'
+            entry: '{{ entry_var }}'
+            minutes: '{{ minutes_var }}'
+            review: '{{ review_var }}'
+            directory: '{{ directory_var }}'
+            filename: '{{ filename_var }}'
+      default:
+      - service: shell_command.zone_registration
+        data:
+          date: '{{ date_var[0:10] }}'
+          entry: '{{ entry_var }}'
+          minutes: '{{ minutes_var }}'
+          review: '{{ review_var }}'
+          comment: '{{ comment_var }}'
+          directory: '{{ directory_var }}'
+          filename: '{{ filename_var }}'
+    icon: mdi:file-delimited
+    mode: single
+
+
+  zone_registration_update_csv_from_lovelace:
+    alias: 'Zone registration: Update CSV from Lovelace GUI'
+    sequence:
+    - if:
+        - condition: template
+          value_template: "{{ states('input_text.zone_registration_comment') | length == 0 }}"
+          alias: If comment is empty
+      then:
+        - service: shell_command.zone_registration
+          data:
+            date: >-
+              {{ states('input_datetime.zone_registration_date_start') | as_timestamp
+              | timestamp_custom('%Y-%m-%d') }}
+            review: >-
+              {{ "Y" if is_state("input_boolean.zone_registration_review","on") else "" }}
+            filename: >-
+              {{ states('sensor.zone_registration_filename') }}
+          alias: Update CSV without comment
+      else:
+        - service: shell_command.zone_registration
+          data:
+            date: >-
+              {{ states('input_datetime.zone_registration_date_start') | as_timestamp
+              | timestamp_custom('%Y-%m-%d') }}
+            review: >-
+              {{ "Y" if is_state("input_boolean.zone_registration_review","on") else "" }}
+            comment: "{{ states('input_text.zone_registration_comment') }}"
+            filename: >-
+              {{ states('sensor.zone_registration_filename') }}
+          alias: Update CSV with comment
+    - service: input_text.set_value
+      data:
+        value: ''
+      target:
+        entity_id: input_text.zone_registration_comment
+    - if:
+        - condition: state
+          entity_id: input_boolean.zone_registration_review
+          state: "on"
+      then:
+        - service: input_boolean.turn_off
+          data:
+            entity_id: input_boolean.zone_registration_review
+    icon: mdi:file-delimited
+    mode: single
+  
+
+  zone_registration_update_csv_range_from_lovelace_gui:
+    alias: "Zone registration: Update CSV range from Lovelace GUI"
+    sequence:
+      - variables:
+          start_date: >-
+            {{ as_timestamp(states('input_datetime.zone_registration_date_start'))
+            }}
+          end_date: "{{ as_timestamp(states('input_datetime.zone_registration_date_end'))}}"
+      - repeat:
+          sequence:
+            - variables:
+                timestamp_counter: "{{ start_date+(86400*(repeat.index-1)) }}"
+            - condition: template
+              value_template: >-
+                {{ as_datetime(timestamp_counter| timestamp_local).isoweekday() not
+                in [6, 7] }}
+            - if:
+                - condition: template
+                  value_template: >-
+                    {{ states('input_text.zone_registration_comment') | length == 0
+                    }}
+                  alias: If comment is empty
+              then:
+                - service: shell_command.zone_registration
+                  data:
+                    date: "{{ timestamp_counter | timestamp_custom('%Y-%m-%d') }}"
+                    review: >-
+                      {{ "Y" if
+                      is_state("input_boolean.zone_registration_review","on") else
+                      "" }}
+                    filename: >-
+                      {{ states('sensor.zone_registration_filename') }}
+                  alias: Update CSV without comment
+              else:
+                - service: shell_command.zone_registration
+                  data:
+                    date: "{{ timestamp_counter | timestamp_custom('%Y-%m-%d') }}"
+                    review: >-
+                      {{ "Y" if
+                      is_state("input_boolean.zone_registration_review","on") else
+                      "" }}
+                    comment: "{{ states(\"input_text.zone_registration_comment\") }}"
+                    filename: >-
+                      {{ states('sensor.zone_registration_filename') }}
+                  alias: Update CSV with comment
+          until:
+            - condition: template
+              value_template: "{{ start_date+(86400*(repeat.index-1)) >= end_date }}"
+      - if:
+          - condition: state
+            entity_id: input_boolean.zone_registration_review
+            state: "on"
+        then:
+          - service: input_boolean.turn_off
+            data:
+              entity_id: input_boolean.zone_registration_review
+        alias: Turn off review boolean
+      - service: input_text.set_value
+        data:
+          value: ""
+        target:
+          entity_id: input_text.zone_registration_comment
+        alias: Remove text in comment field
+    mode: single
+    icon: mdi:file-delimited
+
+
+  zone_registration_remove_date_csv_from_lovelace:
+    alias: 'Zone registration: Remove date from CSV from Lovelace GUI'
+    sequence:
+      - service: shell_command.rm_date_zone_csv
+        data:
+          date: >-
+            {{ (states('input_datetime.zone_registration_date_start') | as_timestamp | timestamp_custom('%Y-%m-%d'))[0:10] }}
+          filename: >-
+            {{ states('sensor.zone_registration_filename') }}
+        alias: Remove date from CSV
+    icon: mdi:file-delimited-outline
+    mode: single

@@ -1,0 +1,548 @@
+# Garmin Livetrack package for Home Assistant
+# garmin_livetrack.yaml
+# Originally inspiration source: https://community.home-assistant.io/t/garmin-livetrack-tracking-package/552793
+#
+# Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+#
+################################################
+## Changelog
+################################################
+#
+# 1.0.0 (2023-09-12)
+#   Added
+#   - Version 1.0.0 defined
+# 
+################################################
+## Explainer
+################################################
+# This package is relying on Garmin servers displaying livetrack data.
+# The following situations have been tested and should work out of the box:
+# - A single Garmin user with a garmin device configured to send livetrack notification to a mailbox.
+# - Multiple Garmin users which sends livetrack data to the mailbox, with only one active livetrack at a time.
+# - Livetrack URLs can be entered manually in the sensor input_text.livetrack_url. This can be used for testing.
+# - Livetrack under in 23 hours.
+# 
+# Known issues:
+# - Livetracks that are started an stopped instantly and afterwards deleted from the Garmin device might result in uninteded states.
+#
+# 
+################################################
+## Preconditions:
+################################################
+# 1. Notify integration configured: https://www.home-assistant.io/integrations/notify/
+# 2. Garmin watch or other device configured for sending livetrack mails to a mailbox which is monitored by HA.
+# 2. An IMAP sensor in HA, whic receives the livetrack email from Garmin. See https://www.home-assistant.io/integrations/imap 
+#    In the email from Garmin there is a URL used to find the livertrack data. 
+#    Any IMAP sensor will fire the search for a Garmin Link in mail text (body)
+# 
+#
+################################################
+## Installation
+################################################
+# 1. Place this package file in your /config/packages/ directory.
+# 2. Restart your Home Assistant instance to load the package file.
+# 3. Restart your Home Assistant instance AGAIN, to execute commands in automation.livetrack_initialize_start_values
+# 4. OPTIONAL: After step 3, you may disable the automation automation.livetrack_initialize_start_values which will run some setup checks at 
+#    at every restart of HA (not something that will take long though, so it is optional).
+# 5. Update the URL in the field input_text.livetrack_local_json_path to match your server address.
+# 6. If you only want to track a specific type of livetracks (e.g. running), select your sport of choice in the input select 
+#    entity, input_select.livetrack_track_only_activity.
+#
+#
+################################################
+## Data contents extracted from IMAP
+################################################
+# All IMAP mails are scanned. Livetrack emails contains a link to the user friendly view of the livetrack. 
+# The URL can be transformed into two data URL (json);
+# - Livetrack session data -> "https://livetrack.garmin.com/services/session/..../sessionToken/...."
+# - TrackPoint data -> "https://livetrack.garmin.com/services/session/..../trackpoints"
+#
+# 
+################################################
+### Single user mode and multi user mode
+################################################
+# The package works out of the box if only a single user uses it.
+# Multiple concurrent livetracks by more than one user might work but can cause unforeseen errors when livetracking simultanuously.
+# NOTE: I have a setup where my wife and I both use Livetracks. When I find an error, i fix it when I get time.
+#
+#
+################################################ 
+## Lovelace config
+################################################ 
+# (Optional) Add config below to your lovelace interface as entity cards:
+#
+#type: entities
+#entities:
+#  - entity: input_text.livetrack_url
+#  - entity: sensor.livetrack_url_from_imap
+#  - entity: script.livetrack_update_livetrack
+#  - entity: script.livetrack_clear_notify_notifications
+#  - entity: automation.livetrack_monitor_active_livetracks
+#    name: 'Automation: Monitor Livetracks '
+#  - type: divider
+#  - entity: input_boolean.livetrack_notifications
+#  - entity: input_text.livetrack_notifier_name
+#title: Livetrack config
+#show_header_toggle: false
+#
+#
+#type: entities
+#entities:
+#  - entity: input_select.livetrack_track_only_activity
+#  - entity: binary_sensor.livetrack_in_progress
+#  - entity: binary_sensor.livetrack_anne_grete
+#  - entity: binary_sensor.livetrack_teejay
+#  - entity: input_text.livetrack_active_url
+#state_color: true
+#title: Livetrack Monitoring
+
+
+
+################################################
+## Customize
+################################################
+
+homeassistant:
+
+  customize:
+    ################################################
+    ## Node Anchors
+    ################################################
+
+    package.node_anchors:
+      customize: &customize
+        package: 'garmin_livetrack'
+
+    ################################################
+    ## Customize Group
+    ################################################
+
+    group.garmin_livetrack:
+      <<: *customize
+      friendly_name: "Garmin Livetrack"
+      icon: mdi:run
+
+    group.garmin_livetrack_config:
+      <<: *customize
+      friendly_name: "Garmin Livetrack Config"
+      icon: mdi:run
+
+
+################################################
+## Group
+################################################
+
+group:
+
+  garmin_livetrack_config:
+    entities:
+      - input_text.livetrack_local_json_path
+      - input_text.livetrack_notifier_name
+      - input_boolean.livetrack_notifications
+      - input_select.livetrack_track_only_activity
+      - automation.livetrack_monitor_active_livetracks
+      - automation.livetrack_initialize_start_values
+      - input_boolean.livetrack_strict_user_control
+      - input_text.livetrack_users
+  
+
+  garmin_livetrack:
+    entities:
+      - script.livetrack_update_livetrack
+      - script.livetrack_clear_notify_notifications
+      - input_text.livetrack_url
+      - input_text.livetrack_active_url
+      - sensor.livetrack_url_from_imap
+      - sensor.livetrack_id
+      - sensor.livetrack_active_id
+      - sensor.livetrack_session
+      - sensor.livetrack_trackpoints
+      - binary_sensor.livetrack_in_progress
+      
+
+################################################
+## Input Boolean
+################################################
+
+input_boolean:
+  livetrack_notifications:
+    name: Livetrack Notifications 
+    icon: mdi:message-text-fast-outline
+
+  livetrack_strict_user_control:
+    name: Livetrack Strict User control 
+    icon: mdi:account-filter
+
+
+################################################
+## Input Text
+################################################
+
+input_text:
+
+  # Used for manual entering of URL to be tracked
+  livetrack_url:
+    name: LiveTrack URL
+    max: 250
+    icon: mdi:link
+    initial: ""
+
+
+  # Used to store active URL 
+  livetrack_active_url:
+    name: LiveTrack Active URL
+    max: 250
+    icon: mdi:link
+    initial: ""
+
+
+  # Change the following URL to match your local path of the json file 
+  livetrack_local_json_path:
+    name: Livetrack Local JSON path
+    max: 250
+    icon: mdi:file-edit
+
+
+  # Garmin accounts enabled for tracking
+  livetrack_users:
+    name: Livetrack Users
+    mode: text
+    icon: mdi:account-multiple
+
+
+  # The name of the notifier that receives notifications
+  livetrack_notifier_name:
+    name: Livetrack Notifier Name
+    mode: text
+    icon: mdi:bullhorn
+
+
+################################################
+## Input Select
+################################################
+
+input_select:
+
+  livetrack_track_only_activity:
+    name: Livetrack Track only activity
+    options:
+     - All activities
+     - Running
+     - Walking
+     - Cycling
+     - Strength
+     - Swimming
+     - Other
+    icon: mdi:torch
+
+
+################################################
+## RESTful
+################################################
+
+sensor:
+
+  - platform: rest
+    resource_template: "{{ state_attr('sensor.livetrack_active_id','livetrack_data_url') if state_attr('sensor.livetrack_active_id','livetrack_data_url') != None else states('input_text.livetrack_local_json_path') }}"
+    name: LiveTrack TrackPoints
+    icon: mdi:database-refresh
+    value_template: "{{ state_attr('sensor.livetrack_active_id','session') }}"
+    scan_interval: 2592000 #30d
+    timeout: 10
+    headers:
+      Content-Type: application/json
+    json_attributes_path: "$.trackPoints[-1:]"
+    json_attributes: 
+    - dateTime
+    - position
+    - fixType
+    - altitude
+    - fitnessPointData
+    - speed
+
+
+  - platform: rest
+    resource_template: "{{ state_attr('sensor.livetrack_active_id','livetrack_session_url') if state_attr('sensor.livetrack_active_id','livetrack_session_url') != None else states('input_text.livetrack_local_json_path') }}"
+    name: LiveTrack Session
+    icon: mdi:database-refresh
+    value_template: "{{ state_attr('sensor.livetrack_active_id','session') }}"
+    scan_interval: 2592000 #30d
+    timeout: 10
+    headers:
+      Content-Type: application/json
+    json_attributes_path: "$.session"
+    json_attributes: 
+    - start
+    - end
+    - userDisplayName
+    - viewable
+    - sessionName
+    - sessionId
+
+
+################################################
+## Template sensors
+################################################
+
+shell_command:
+
+  create_empty_garmin_json_file: 'TESTDIR=/config/www/livetrack; [[ -d $(dirname ${TESTDIR}) ]] && [[ ! -d ${TESTDIR} ]] && mkdir -p ${TESTDIR} ; echo ''{"trackPoints":[]}'' > $TESTDIR/empty_garmin.json'
+
+
+################################################
+## Template sensors
+################################################
+
+template:
+
+  # Sensor to get link from email with integration: https://www.home-assistant.io/integrations/imap
+- trigger:
+    - platform: event
+      event_type: "imap_content"
+      id: "custom_event"
+      event_data:
+        sender: noreply@garmin.com
+  sensor:
+    - name: LiveTrack URL from IMAP
+      icon: mdi:email-edit
+      state: >-
+        {{ (( trigger.event.data['text'] | regex_findall(find='https://livetrack.[^\>"]+', ignorecase=True)))[0] | replace('\r','') | replace('\n','') | replace('=','') }}
+      attributes:
+        message: "{{ (trigger.event.data['text'])[16384] }}"
+        server: "{{ trigger.event.data['server'] }}"
+        username: "{{ trigger.event.data['username'] }}"
+        search: "{{ trigger.event.data['search'] }}"
+        folder: "{{ trigger.event.data['folder'] }}"
+        sender: "{{ trigger.event.data['sender'] }}"
+        date: "{{ trigger.event.data['date'] }}"
+        subject: "{{ trigger.event.data['subject'] }}"
+        to: "{{ trigger.event.data['headers'].get('To', ['n/a'])[0] }}"
+        from: "{{ trigger.event.data['headers'].get('From',['n/a'])[0] }}"
+        livetrack_url: |
+          {{ ((( trigger.event.data['text'] | regex_findall(find='https://livetrack.[^\>"]+', ignorecase=True)))[0] | replace('\r','') | replace('\n','') | replace('=','')) }}
+
+
+  # sensor to hold the state of the latest livetrack session
+- trigger:
+  - platform: state
+    entity_id: input_text.livetrack_url
+  - platform: state
+    entity_id: sensor.livetrack_url_from_imap   
+  sensor:
+  - name: Livetrack ID
+    icon: mdi:note-edit-outline
+    state: >-
+      {%- if "livetrack.garmin.com" in trigger.to_state.state %}
+        {{- states(trigger.entity_id) -}}
+      {%- endif -%}
+    
+    
+  # sensor to hold the state of the active livetrack session
+- trigger:
+  - platform: state
+    entity_id: input_text.livetrack_active_url
+  sensor:
+  - name: Livetrack Active ID
+    icon: mdi:note-edit
+    state: >-
+      {%- if "livetrack.garmin.com" in trigger.to_state.state %}
+        {{- states(trigger.entity_id) -}}
+      {%- endif -%}
+    attributes:
+      livetrack_url: >-
+        {%- if "livetrack.garmin.com" in trigger.to_state.state -%}
+        {{- trigger.to_state.state -}}
+        {%- endif -%}
+      livetrack_data_url: >-
+        {%- if "livetrack.garmin.com" in trigger.to_state.state -%}
+        {{- trigger.to_state.state | replace('.com/session/','.com/services/session/') |regex_replace(find='/token.*', replace='/trackpoints', ignorecase=True) -}}
+        {%- endif -%}
+      livetrack_session_url: >-
+        {%- if "livetrack.garmin.com" in trigger.to_state.state -%}
+        {{- trigger.to_state.state | replace('.com/session/','.com/services/session/') | replace('token','sessionToken') -}}  
+        {%- endif -%}
+      session: >-
+        {{ trigger.to_state.state |regex_replace(find='.*/session/', replace='', ignorecase=True) |regex_replace(find='/.*', replace='', ignorecase=True) -}}
+
+
+- binary_sensor:
+  - name: Livetrack in progress
+    state: |
+      {% set valid_livetrack_activity = states('input_select.livetrack_track_only_activity') | lower() == 
+         this.attributes.activity | lower() 
+         or is_state('input_select.livetrack_track_only_activity','All activities') if this.attributes.activity is defined else false %}
+      {{ as_timestamp(state_attr('sensor.livetrack_session','end'),0) > as_timestamp(now()) >
+         as_timestamp(state_attr('sensor.livetrack_session','start'),0)   
+         and this.attributes.start != None 
+         and valid_livetrack_activity }} 
+    icon: |
+      {% if is_state(this.entity_id,'on') %}
+        {% if this.attributes.activity=='running' %}
+          mdi:run-fast
+        {% elif this.attributes.activity=='walking' %}
+          mdi:walk
+        {% elif this.attributes.activity=='cycling' %}
+          mdi:bike-fast
+        {% elif this.attributes.activity=='strength' %}
+          mdi:weight-lifter
+        {% elif this.attributes.activity=='swimming' %}
+          mdi:swim
+        {% elif this.attributes.activity=='other' %}
+          mdi:torch
+        {% else %}
+          mdi:transit-connection-variant
+        {% endif %}
+      {% else %}
+        {% if states('input_select.livetrack_track_only_activity').lower()=='running' %}
+          mdi:run
+        {% elif states('input_select.livetrack_track_only_activity').lower()=='walking' %}
+          mdi:walk
+        {% elif states('input_select.livetrack_track_only_activity').lower()=='cycling' %}
+          mdi:bike
+        {% elif states('input_select.livetrack_track_only_activity').lower()=='strength' %}
+          mdi:weight-lifter
+        {% elif states('input_select.livetrack_track_only_activity').lower()=='swimming' %}
+          mdi:swim
+        {% elif states('input_select.livetrack_track_only_activity').lower()=='other' %}
+          mdi:torch
+        {% else %}
+          mdi:transit-connection-variant
+        {% endif %}
+      {% endif %}
+    attributes:
+      last_updated: "{{this.last_updated}}"
+      garmin_user: "{{ state_attr('sensor.livetrack_session','userDisplayName') }}"
+      start: "{{ states.sensor.livetrack_session.attributes.end if 'fitnessPointData' in states.sensor.livetrack_session.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      end: "{{ states.sensor.livetrack_session.attributes.end if 'fitnessPointData' in states.sensor.livetrack_session.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      latitude: "{{ states.sensor.livetrack_trackpoints.attributes.position.lat if 'position' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      longitude: "{{ states.sensor.livetrack_trackpoints.attributes.position.lon if 'position' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      datetime: "{{ states.sensor.livetrack_trackpoints.attributes.dateTime if 'dateTime' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      duration: >-
+        {% if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes  and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints')%}
+          {% set duration_sec = int(state_attr('sensor.livetrack_trackpoints', 'fitnessPointData')['totalDurationSecs']) %}
+          {% if duration_sec >= 3600  %}
+            {% set duration_hrs = (duration_sec // 3600 )|string+'h ' %}
+            {% set duration_min = (duration_sec-3600) // 60 %}
+            {% set duration_minsec = (duration_sec-3600) - duration_min *60 %}
+            {{ duration_hrs + '{:2d}\'{:02d}\"'.format(duration_min,duration_minsec) }} 
+          {% else %}      
+            {% set duration_min = duration_sec // 60 %}
+                {% set duration_minsec = duration_sec - duration_min *60 %}
+                {{ '{:2d}\'{:02d}\"'.format(duration_min,duration_minsec) }} 
+          {% endif %}
+        {% endif %}
+      activity: "{{ (states.sensor.livetrack_trackpoints.attributes.fitnessPointData.activityType if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints')) | lower }}"
+      distance: "{{ (states.sensor.livetrack_trackpoints.attributes.fitnessPointData.distanceMeters | int(0) )/1000 | round(1) if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      event: "{{ states.sensor.livetrack_trackpoints.attributes.fitnessPointData.eventTypes if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      status: "{{ (states.sensor.livetrack_trackpoints.attributes.fitnessPointData.pointStatus if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints')) | lower }}"
+      speed: "{{ (states.sensor.livetrack_trackpoints.attributes.speed)*3.6 if 'speed' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      pace: "{{ 16.666666667/(states.sensor.livetrack_trackpoints.attributes.speed) if 'speed' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      altitude: "{{ states.sensor.livetrack_trackpoints.attributes.altitude if 'altitude' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      heartbeats: "{{ states.sensor.livetrack_trackpoints.attributes.fitnessPointData.heartRateBeatsPerMin if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      watt: "{{ (states.sensor.livetrack_trackpoints.attributes.fitnessPointData.powerWatts if 'powerWatts' in states.sensor.livetrack_trackpoints.attributes.fitnessPointData) if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      livetrack_url: "{{ states('sensor.livetrack_active_id') }}"
+
+
+################################################
+## Automation
+################################################
+
+automation:
+
+- alias: 'LiveTrack: Monitor active livetracks'
+  mode: parallel
+  trigger:
+  - platform: state
+    entity_id: sensor.livetrack_id
+    not_from: 
+      - "unavailable"
+      - "unknown"
+  condition:
+    - condition: template
+      value_template: "{{ trigger.to_state.state is defined and trigger.to_state.state != '' }}"
+    - condition: not
+      conditions:
+        - condition: template
+          value_template: '{{ trigger.to_state == none }}'
+        - condition: template
+          value_template: '{{ trigger.from_state == none }}'
+  action:  
+  - service: script.livetrack_update_livetrack
+    data:
+      url: "{{ trigger.to_state.state }}}}"
+      notifier: |
+        {% if 'notify.' in states('input_text.livetrack_notifier_name') %}
+          {{ states('input_text.livetrack_notifier_name') }}
+        {% else %}
+          notify.notify
+        {% endif %}
+        
+
+- alias: 'Livetrack: Initialize start values'
+  id: "livetrack_initialize"
+  description: "Will run at HA start. Only need to run once. Can be disabled afterwards"
+  trigger:
+    - platform: homeassistant
+      event: start
+  condition:
+    - condition: or
+      conditions:
+        - condition: state
+          entity_id: input_text.livetrack_notifier_name
+          state: ""
+        - condition: state
+          entity_id: input_text.livetrack_local_json_path
+          state: ""
+  action:
+    - choose:
+        - conditions:
+            - condition: state
+              entity_id: input_text.livetrack_local_json_path
+              state: ""
+          sequence:
+            - service: input_text.set_value
+              data:
+                value: https://homeassistant.local:8123/local/livetrack/empty_garmin.json 
+              target:
+                entity_id: input_text.livetrack_local_json_path
+        - conditions:
+            - condition: state
+              entity_id: input_text.livetrack_notifier_name
+              state: ""
+          sequence:
+            - stop: Stopping automation. No further values set.
+            - service: input_text.set_value
+              data:
+                value: notify.notify
+              target:
+                entity_id: input_text.livetrack_notifier_name
+    - service: shell_command.create_empty_json_file
+      data: {}
+
+
+
+################################################
+## Script
+################################################
+
+script:
+
+  livetrack_clear_notify_notifications:
+    alias: 'Livetrack: Clear Notify notifications'
+    sequence:
+    - delay: 300
+      alias: 'PRE-CLEANUP: Wait for 5 minutes'
+    - service:  |
+        {% if 'notify.' in states('input_text.livetrack_notifier_name') %}
+          {{ states('input_text.livetrack_notifier_name') }}
+        {% else %}
+          notify.notify
+        {% endif %}
+      data:
+        message: clear_notification
+        data:
+          tag: livetrack_start_stop
+      alias: 'CLEANUP: Clear notifications '
+    icon: mdi:message-check-outline
+    mode: parallel
+    max: 15
