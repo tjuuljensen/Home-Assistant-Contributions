@@ -25,9 +25,9 @@
 ################################################
 # This package is adding functionality to automatic log time in a specific zone.
 # It was written to assist in my yearly tax registration (travel deduction) by keeping a record 
-# for each day where I was at the office. 
-# As the functionality can be beneficial in several use cased, I added the option of using different 
-# zones and multiple identifiers.
+# of each day where I was at the office. 
+# As the functionality can be beneficial in several use cases, I added the option of using multiple 
+# zones and different persons entities.
 #
 ################################################ 
 ## Known issues
@@ -39,7 +39,7 @@
 # Q: How many persons can I track?
 # A: You can track two persons using two different configurations.
 #
-# Q: Can I track two persons on the same lcation?
+# Q: Can I track two persons on the same location?
 # A: Yes.
 #
 # Q: Can I track two zones for the same person?
@@ -83,7 +83,7 @@
 ################################################ 
 ## Installation
 ################################################
-# 1. Place this package file on your home assistant device in the /config/packages/ directory.
+# 1. Place the package files (.yaml AND .sh) on your home assistant device in the /config/packages/ directory.
 # 2. Restart your Home Assistant instance to load the package file.
 # 3. Restart your Home Assistant instance AGAIN, to execute commands in automation.zone_registration_initialize_start_values
 # 4. Add Entity cards to your Lovelace interface to access package options
