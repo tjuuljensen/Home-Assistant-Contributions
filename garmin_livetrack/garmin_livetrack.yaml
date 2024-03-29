@@ -12,6 +12,9 @@
 #   Added
 #   - Version 1.0.0 defined
 # 
+# 1.0.1 (2024-03-20)
+#   Added
+#   - Missing script added to file
 ################################################
 ## Explainer
 ################################################
@@ -545,4 +548,283 @@ script:
       alias: 'CLEANUP: Clear notifications '
     icon: mdi:message-check-outline
     mode: parallel
+    max: 15
+
+
+  livetrack_update_livetrack:
+    alias: 'Livetrack: Update Livetrack'
+    mode: parallel
+    icon: mdi:transit-transfer
+    fields:
+      url:
+        description: Livetrack URL
+        example: https://livetrack.garmin.com/session/8739a8d5-5f1a-4fde-9a6d-d51edb47c9a1/token/C28516F21313BDE781DB8171A5BC9976
+        required: false
+      notifier:
+        description: Name of Notify service
+        example: notify.notify
+        required: false
+      update_interval:
+        description: Update interval in minutes
+        example: '5'
+        default: 2
+        required: false
+    sequence:
+    - variables:
+        update_interval_minutes: '{{ int(update_interval,2) if update_interval else
+          2 }}'
+        livetrack_session: '{{ url |regex_replace(find=''.*/session/'', replace='''',
+          ignorecase=True) |regex_replace(find=''/.*'', replace='''', ignorecase=True)
+          -}}'
+        script_start: '{{ as_timestamp(now()) }}'
+      alias: 'INITIAL: Define variable values'
+    - alias: 'INITIAL: Delay if livetrack active id was updated recently'
+      wait_template: '{{ now().timestamp() - as_timestamp(states.sensor.livetrack_active_id.last_updated)
+        > 5 }}'
+      continue_on_timeout: true
+      timeout: '15'
+    - service: input_text.set_value
+      data:
+        value: '{{ states(''sensor.livetrack_id'') }}'
+      target:
+        entity_id: input_text.livetrack_active_url
+      alias: 'INITIAL: Set livetrack active URL to the livetrack in progress'
+    - service: homeassistant.update_entity
+      data: {}
+      target:
+        entity_id:
+        - sensor.livetrack_session
+        - sensor.livetrack_trackpoints
+      alias: 'INITIAL: Fetch Livetrack Session & TrackPoint data'
+    - wait_template: '{{ as_timestamp(states.sensor.livetrack_session.last_changed)
+        >= script_start }}'
+      continue_on_timeout: true
+      timeout: '5'
+      alias: 'INITIAL: Wait until livetrack_session has updated'
+    - alias: 'INITIAL: Initial test to detect if livetrack has already ended or if livetrack
+        update timed out.'
+      if:
+      - condition: template
+        value_template: '{{ wait.completed == false }}'
+        alias: Livetrack fetch timed out
+      - condition: or
+        conditions:
+        - condition: template
+          value_template: '{{  as_timestamp(now()) > as_timestamp(state_attr(''sensor.livetrack_session'',''end''),0
+            ) }}'
+          alias: 'Test if session end timestamp is in the past '
+        - condition: template
+          value_template: '{{ ''END'' in states.sensor.livetrack_trackpoints.attributes.fitnessPointData.eventTypes
+            if ''fitnessPointData'' in states.sensor.livetrack_trackpoints.attributes
+            and is_state(''sensor.livetrack_trackpoints'',livetrack_session) else false
+            }}'
+          alias: END event exist in trackpoint dataset
+        alias: Test if livetrack has ended
+      then:
+      - stop: Livetrack appears to be in the past. Stopping script.
+    - alias: 'PRE-START: Delay if livetrack active id was updated recently'
+      wait_template: '{{ now().timestamp() - as_timestamp(states.sensor.livetrack_active_id.last_updated)
+        > 5 }}'
+      continue_on_timeout: true
+      timeout: '15'
+    - alias: 'PRE-START-LOOP: Repeat updating livetrack trackpoints data until trackpoints
+        are received '
+      repeat:
+        until:
+        - condition: or
+          conditions:
+          - condition: template
+            value_template: '{{ ''fitnessPointData'' in states.sensor.livetrack_trackpoints.attributes
+              and is_state(''sensor.livetrack_trackpoints'',livetrack_session) }}'
+            alias: Check if trackpoint data has been received
+          - condition: template
+            value_template: '{{ script_start+600 < as_timestamp(now()) }}'
+            alias: Has script been running for over 10 minutes (without trackpoint data)
+          alias: Wait until trackpoints are received or until no data was received for
+            x minutes
+        sequence:
+        - service: input_text.set_value
+          data:
+            value: '{{ states(''sensor.livetrack_id'') }}'
+          target:
+            entity_id: input_text.livetrack_active_url
+          alias: Set livetrack active URL to the livetrack in progress
+        - service: homeassistant.update_entity
+          data: {}
+          target:
+            entity_id:
+            - sensor.livetrack_trackpoints
+          alias: Fetch Livetrack TrackPoints
+        - wait_template: '{{ ''fitnessPointData'' in states.sensor.livetrack_trackpoints.attributes
+            }}'
+          continue_on_timeout: true
+          timeout: 00:00:15
+          alias: ' Check if trackpoint data has been received'
+    - condition: and
+      conditions:
+      - condition: template
+        value_template: "{{ states('input_select.livetrack_track_only_activity') | lower()
+          == \n  states.sensor.livetrack_trackpoints.attributes.fitnessPointData.activityType
+          | lower() \n  or is_state('input_select.livetrack_track_only_activity','All
+          activities') \n  if 'fitnessPointData' in states.sensor.livetrack_trackpoints.attributes
+          \n  and is_state('sensor.livetrack_trackpoints',livetrack_session)\n  else
+          false }}"
+        alias: Test if livetrack is part of selected activity types
+      - condition: template
+        value_template: "{{  as_timestamp(now()) <\n      as_timestamp(state_attr('sensor.livetrack_session','end'),0)\n
+          \   and as_timestamp(now()) >\n      as_timestamp(state_attr('sensor.livetrack_session','start'),as_timestamp(now()))
+          \ }} "
+        alias: Test if Livetrack is active
+      alias: 'START-CONDITIONS: Test if Livetrack is of valid activity type and is active'
+    - if:
+      - condition: state
+        entity_id: input_boolean.livetrack_notifications
+        state: 'on'
+      then:
+      - alias: Notify start
+        service: "{% if 'notify.' in states('input_text.livetrack_notifier_name') %}\n
+          \ {{ states('input_text.livetrack_notifier_name') }}\n{% else %}\n  notify.notify\n{%
+          endif %}\n"
+        data:
+          title: LiveTrack
+          message: "{{ state_attr('binary_sensor.livetrack_in_progress','garmin_user')
+            }} started a {{ \n  state_attr('binary_sensor.livetrack_in_progress','activity')
+            }} session.\n"
+          data:
+            group: livetrack
+            tag: livetrack_start_stop
+            url: '{{ state_attr(''sensor.livetrack_id'',''livetrack_url'') }}'
+            icon: mdi:run-fast
+            actions:
+            - action: OPEN_LIVETRACK
+              uri: '{{ state_attr(''sensor.livetrack_id'',''livetrack_url'') }}'
+              title: Show Garmin livetrack
+            - action: DISMISS_
+              title: Dismiss
+      alias: 'PRE-START: Notify about livetrack start if bool is enabled'
+    - alias: 'MAIN-LOOP: Repeat updating livetrack data until one of the conditions
+        are true'
+      repeat:
+        until:
+        - condition: or
+          conditions:
+          - alias: Test if livetrack has ended
+            condition: or
+            conditions:
+            - condition: template
+              value_template: "{{ 'END' in \n          states.sensor.livetrack_trackpoints.attributes.fitnessPointData.eventTypes\n
+                \         if 'fitnessPointData' in\n          states.sensor.livetrack_trackpoints.attributes
+                \n          and is_state('sensor.livetrack_trackpoints',livetrack_session)\n
+                \         else false }}\n"
+              alias: Test if END exist in last TrackPoint dataset
+            - alias: Test if session end timestamp is in the past
+              condition: template
+              value_template: '{{  as_timestamp(now()) > as_timestamp(state_attr(''sensor.livetrack_session'',''end''),as_timestamp(now()))
+                }}'
+          - condition: template
+            value_template: '{{ repeat.index > (23*60/update_interval_minutes) }}'
+            alias: Test if livetrack has been running for more than 23 hours
+          alias: Test if livetrack has ended or it has been running more than 23 hours
+        sequence:
+        - delay:
+            minutes: "{% set updated_recently =  now().timestamp() - as_timestamp(states.sensor.livetrack_session.last_updated)
+              < 10 %}\n{% set running_script_count = state_attr('script.livetrack_update_livetrack','current')
+              %}\n{{ update_interval_minutes / running_script_count if updated_recently
+              and running_script_count > 1\n   else 0 }}\n"
+          alias: Delay if livetrack was updated recently (distribute parallel scripts
+            evenly)
+        - service: input_text.set_value
+          data:
+            value: '{{ states(''sensor.livetrack_id'') }}'
+          target:
+            entity_id: input_text.livetrack_active_url
+          alias: Set livetrack active URL to the livetrack in progress
+        - service: homeassistant.update_entity
+          data: {}
+          target:
+            entity_id:
+            - sensor.livetrack_trackpoints
+            - sensor.livetrack_session
+          alias: Update Livetrack Session and Trackpoint data
+        - wait_template: "{{ ('END' in  state_attr('binary_sensor.livetrack_in_progress','event')
+            and is_state('sensor.livetrack_trackpoints',livetrack_session) )\n  or as_timestamp(now())
+            > as_timestamp(state_attr('sensor.livetrack_session','end'),as_timestamp(now()))
+            }}"
+          alias: Wait for END in last TrackPoint dataset or that Session End timestamp
+            is in the past
+          timeout:
+            minutes: '{{ update_interval_minutes }}'
+          continue_on_timeout: true
+    - alias: 'POST-ACTIVITY: Repeat updating livetrack session data until livetrack
+        end is received '
+      repeat:
+        until:
+        - condition: or
+          conditions:
+          - condition: template
+            value_template: '{{  as_timestamp(now()) > as_timestamp(state_attr(''sensor.livetrack_session'',''end''),as_timestamp(now()))
+              and is_state(''sensor.livetrack_session'',livetrack_session) }}'
+            alias: Test if session end timestamp is in the past
+          - condition: template
+            value_template: '{{ repeat.index > (20) }}'
+            alias: Test if livetrack session end listener has been running for more
+              than 10 minutes
+          alias: Test if livetrack has ended or this listener ran for more than 10 minutes
+        sequence:
+        - delay:
+            seconds: "{% set updated_recently =  now().timestamp() - as_timestamp(states.sensor.livetrack_session.last_updated)
+              < 10 %}\n{% set running_script_count = state_attr('script.livetrack_update_livetrack','current')
+              %}\n{{ 10 * running_script_count if updated_recently and running_script_count
+              > 1\n   else 0 }}\n"
+          alias: Delay in seconds if livetrack was updated recently (distribute parallel
+            scripts evenly)
+        - service: input_text.set_value
+          data:
+            value: '{{ states(''sensor.livetrack_id'') }}'
+          target:
+            entity_id: input_text.livetrack_active_url
+          alias: Set livetrack active URL to the livetrack in progress
+        - service: homeassistant.update_entity
+          data: {}
+          target:
+            entity_id:
+            - sensor.livetrack_session
+          alias: Update Livetrack Session Data
+        - wait_template: '{{ as_timestamp(now()) > as_timestamp(state_attr(''sensor.livetrack_session'',''end''),as_timestamp(now()))
+            }}'
+          continue_on_timeout: true
+          timeout: 00:00:30
+          alias: Wait for session end timestamp to be in the past
+    - if:
+      - condition: state
+        entity_id: input_boolean.livetrack_notifications
+        state: 'on'
+      then:
+      - alias: Notify end
+        service: "{% if 'notify.' in states('input_text.livetrack_notifier_name') %}\n
+          \ {{ states('input_text.livetrack_notifier_name') }}\n{% else %}\n  notify.notify\n{%
+          endif %}\n"
+        data:
+          title: Livetrack
+          message: "{{ state_attr('binary_sensor.livetrack_in_progress','distance')
+            }} km {{ \n  state_attr('binary_sensor.livetrack_in_progress','activity')
+            }} session finished in {{ \n  state_attr('binary_sensor.livetrack_in_progress','duration')
+            }}\n"
+          data:
+            group: livetrack
+            tag: livetrack_start_stop
+            url: '{{ state_attr(''sensor.livetrack_id'',''livetrack_url'') }}'
+            icon: mdi:stop-circle
+            actions:
+            - action: OPEN_LIVETRACK
+              title: Show Garmin Livetrack
+              uri: '{{ state_attr(''sensor.livetrack_id'',''livetrack_url'') }}'
+            - action: DISMISS_
+              title: Dismiss
+      - service: script.turn_on
+        data: {}
+        target:
+          entity_id: script.livetrack_clear_notify_notifications
+        alias: Start script which clears notification after defined period
+      alias: 'POST-ACTIVITY: Notify about livetrack end if bool is enabled'
     max: 15
