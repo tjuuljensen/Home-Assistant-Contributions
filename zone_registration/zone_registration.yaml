@@ -286,7 +286,8 @@ group:
 
   zone_registration:
     entities:
-      - input_datetime.zone_registration_date
+      - input_datetime.zone_registration_date_start
+      - input_datetime.zone_registration_date_end
       - input_boolean.zone_registration_review
       - input_text.zone_registration_comment
       - script.zone_registration_update_csv_from_lovelace
