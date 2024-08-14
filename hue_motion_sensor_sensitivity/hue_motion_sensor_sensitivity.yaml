@@ -25,14 +25,15 @@
 ################################################
 # - The package can only handle configurations with motions sensors on up to two different hubs. This is due to the input_text limit of 255 characters.
 # - If you use browser mod and have added browsers as entities, they will show up as a motion sensor. These are being filtered out by 
-#   rejecting motion sensor entitied with an attribute called "type" 
+#   rejecting motion sensor entitied with an attribute called "type".
 #
 # 
 ################################################
 ## Preconditions
 ################################################
-# 1. The package operates under the assumption that hue motion sensors can be identified by deselecting sensors with an entity_id
-#    attribute (which is the case for motion sensor groups) and they must not be of state "unavailable".
+# 1. The package operates under the assumption that hue motion sensors can be identified by selecting sensors of the 
+#    "motion" device class and filtering out sensors with an entity_id attribute (motion sensor groups have these attributes,
+#    but a motion sensor does not have it). Furthermore they must not be of state "unavailable".
 #
 #
 ################################################ 
@@ -43,7 +44,8 @@
 # 3. Optional: Add Entity cards to your Lovelace interface to access package options
 # 4. Enter your Hue hub IP address in the field input_text.hue_hub_ip
 # 5. Press the physical button on your Hue hub
-# 6. Run script.hue_motion_sensor_register_hub_user - the field input_text.hue_hub_username should now contain a long unique username and you should be good to go.
+# 6. Run script.hue_motion_sensor_register_hub_user (If you added my entity cards, you can find it in the Hue motion sensor config group
+# 7. The field input_text.hue_hub_username should now contain a long unique username and you should be good to go.
 # 
 #
 ################################################ 
