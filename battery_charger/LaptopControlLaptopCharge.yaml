@@ -1,0 +1,234 @@
+alias: "Laptops: Control Laptop Charge Plug"
+description: >-
+  Enable or disable charging based on battery level to avoid always on state
+  which is bad for batteries
+triggers:
+  - alias: When laptop battery sensor is updated
+    trigger: template
+    value_template: >
+      {% set last_changed_seconds =
+      as_timestamp(expand(states('input_text.entity_trigger_entity_name') ) |
+      map(attribute='last_reported') | list | first ) %}
+
+      {% set current_time_seconds =
+      as_timestamp(strptime(states('sensor.date_time')  ,'%Y-%m-%d, %H:%M'))  %}
+
+      {{ last_changed_seconds+60 > current_time_seconds }}
+    id: battery_state_change
+  - trigger: state
+    entity_id:
+      - input_number.laptop_battery_charge_min
+    enabled: true
+    id: threshold_changed
+  - trigger: state
+    entity_id:
+      - input_number.laptop_battery_charge_max
+    enabled: true
+    id: threshold_changed
+  - trigger: template
+    value_template: >-
+      {{
+      is_state(states('input_select.laptop_network_device_tracker'),'not_home')
+      }} 
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 5
+    id: device_went_offline
+    alias: When device goes offline
+  - trigger: template
+    value_template: >-
+      {{ is_state(states('input_select.laptop_network_device_tracker'),'home')
+      }} 
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 3
+    alias: When Device Tracker comes online for 3 seconds
+    id: device_came_online
+  - trigger: state
+    entity_id:
+      - switch.laptop_charging_plug
+    from: unavailable
+    to: "off"
+    id: plug_ reconnects_in_state_off
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - alias: "Battery state is unknown or unavailable "
+            condition: or
+            conditions:
+              - condition: template
+                value_template: >-
+                  {{
+                  is_state(states('input_select.laptop_sensor_selector'),'unavailable')
+                  }}
+                alias: If batery sensor state is unavailable
+              - condition: template
+                value_template: >-
+                  {{
+                  is_state(states('input_select.laptop_sensor_selector'),'unknown')
+                  }}
+                alias: If batery sensor state is unknown
+        sequence:
+          - stop: "No action required as battery is unknown "
+      - conditions:
+          - alias: Laptop battery is within threshold limits
+            condition: template
+            value_template: >-
+              {% set above_threshold =
+              states(states('input_select.laptop_sensor_selector')) | float(0) >
+              states('input_number.laptop_battery_charge_max') | float(0) %}
+
+              {% set below_threshold =
+              states(states('input_select.laptop_sensor_selector')) | float(0) <
+              states('input_number.laptop_battery_charge_min') | float(0) %}
+
+              {% set outside_threshold = above_threshold or below_threshold %}
+
+              {{ not outside_threshold }}
+          - condition: trigger
+            id:
+              - battery_state_change
+              - threshold_changed
+        sequence:
+          - stop: "No action required as battery is within threshold limits "
+      - conditions:
+          - alias: Laptop battery is below threshold limit
+            condition: template
+            value_template: >-
+              {% set below_threshold =
+              states(states('input_select.laptop_sensor_selector')) | float(0) <
+              states('input_number.laptop_battery_charge_min') | float(0) %}
+
+              {{ below_threshold }}
+          - condition: trigger
+            id:
+              - battery_state_change
+              - threshold_changed
+        sequence:
+          - if:
+              - condition: state
+                entity_id: switch.laptop_charging_plug
+                state: "off"
+            then:
+              - action: switch.turn_on
+                metadata: {}
+                data: {}
+                target:
+                  entity_id: switch.laptop_charging_plug
+      - conditions:
+          - alias: Laptop battery is above threshold limit
+            condition: template
+            value_template: >-
+              {% set above_threshold =
+              states(states('input_select.laptop_sensor_selector')) | float(0) >
+              states('input_number.laptop_battery_charge_max') | float(0) %}
+
+              {{ above_threshold }}
+          - condition: trigger
+            id:
+              - battery_state_change
+              - threshold_changed
+        sequence:
+          - if:
+              - condition: state
+                entity_id: switch.laptop_charging_plug
+                state: "on"
+            then:
+              - action: switch.turn_off
+                metadata: {}
+                data: {}
+                target:
+                  entity_id: switch.laptop_charging_plug
+      - conditions:
+          - condition: trigger
+            id:
+              - device_went_offline
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ states(states('input_select.laptop_sensor_selector')) |
+                      int(0) > 50 }}
+                    alias: If battery is above 50
+                  - condition: state
+                    entity_id: switch.laptop_charging_plug
+                    state: "on"
+                sequence:
+                  - action: switch.turn_off
+                    metadata: {}
+                    data: {}
+                    target:
+                      entity_id: switch.laptop_charging_plug
+              - conditions:
+                  - alias: If battery is below or equal to 50
+                    condition: template
+                    value_template: >-
+                      {{ states(states('input_select.laptop_sensor_selector')) |
+                      int(0) <= 50 }}
+                sequence:
+                  - alias: >-
+                      Do a short charge period before turning off as battery is
+                      less than 50%
+                    if:
+                      - condition: state
+                        entity_id: switch.laptop_charging_plug
+                        state: "on"
+                    then:
+                      - delay:
+                          hours: 0
+                          minutes: 15
+                          seconds: 0
+                          milliseconds: 0
+                      - action: switch.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: switch.laptop_charging_plug
+                    else:
+                      - action: switch.turn_on
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: switch.laptop_charging_plug
+                      - delay:
+                          hours: 0
+                          minutes: 30
+                          seconds: 0
+                          milliseconds: 0
+                      - action: switch.turn_off
+                        metadata: {}
+                        data: {}
+                        target:
+                          entity_id: switch.laptop_charging_plug
+      - conditions:
+          - condition: trigger
+            id:
+              - plug_ reconnects_in_state_off
+        sequence:
+          - action: switch.turn_on
+            metadata: {}
+            data: {}
+            target:
+              entity_id: switch.laptop_charging_plug
+        alias: "Resume charging if device charging plug reconnects "
+      - conditions:
+          - condition: trigger
+            id:
+              - device_came_online
+          - condition: state
+            entity_id: switch.laptop_charging_plug
+            state: "off"
+        sequence:
+          - action: switch.turn_on
+            metadata: {}
+            data: {}
+            target:
+              entity_id: switch.laptop_charging_plug
+        alias: Always resume charging when coming online
+trace:
+  stored_traces: 20
+mode: restart
