@@ -17,6 +17,7 @@
 !*.py
 !*.png
 !*.sh
+!*.ps1
 
 !LICENSE
 !.gitignore
