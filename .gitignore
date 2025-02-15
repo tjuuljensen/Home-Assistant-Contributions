@@ -5,6 +5,7 @@
 
 # Whitelisted files/folders - prefixed with !
 !battery_alert/
+!battery_charger/
 !garmin_livetrack/
 !hue_motion_sensor_sensitivity/
 !pollen_denmark/
