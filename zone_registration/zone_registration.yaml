@@ -20,6 +20,10 @@
 #   - scipt rewritten to use filename as paameter instead of zone
 #   - Config valid template sensor added
 # 
+# 0.3.1 (2025-02-15)
+#   Added
+#   - Syntax in automations changed to new syntax style (actions and triggers)
+#
 ################################################
 ## Explainer
 ################################################
@@ -446,7 +450,7 @@ template:
       state: >
         {{ not ((states('input_text.zone_registration_config') | length == 0 
            or states('input_text.zone_registration_config') == '[]') 
-           or states.binary_sensor.zone_registration_config_valid.attributes.json == None) }} 
+           or this.attributes.json == None) }} 
       attributes:
         json: >
           {{ states('input_text.zone_registration_config').replace('\'','"') | from_json }}
@@ -464,8 +468,8 @@ automation:
 
   - alias: 'Zone registration: Initialize start values'
     description: Will run at HA start. Only need to run once. Can be disabled afterwards
-    trigger:
-    - platform: homeassistant
+    triggers:
+    - trigger: homeassistant
       event: start
     condition:
     - condition: or
@@ -488,7 +492,7 @@ automation:
           entity_id: input_text.zone_registration_config
           state: ''
       then:
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           value: '[]'
         target:
@@ -501,7 +505,7 @@ automation:
           entity_id: input_text.zone_registration_comment
           state: unknown
       then:
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           value: ''
         target:
@@ -514,48 +518,48 @@ automation:
           entity_id: input_text.zone_registration_config_label
           state: unknown
       then:
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           value: ''
         target:
           entity_id: input_text.zone_registration_config_label
       alias: Set label to empty if unknown
-    - service: shell_command.create_csv_dir
+    - action: shell_command.create_csv_dir
       data: {}
       alias: Create CSV directory if it does not exist
-    - service: shell_command.mv_zone_csv_script
+    - action: shell_command.mv_zone_csv_script
       data: {}
       alias: 'Move script from packages to csv directory '
 
 
   - alias: 'Zone registration: Fill input select with data'
     description: Populate input selects with zone and person data
-    trigger:
-    - platform: homeassistant
+    triggers:
+    - trigger: homeassistant
       event: start
       id: start
-    - platform: event
+    - trigger: event
       id: reload
       event_type: call_service
       event_data:
         domain: input_select
-        service: reload
+        action: reload
     condition: []
     action: 
       - delay: "00:00:01"
-      - service: input_select.set_options
+      - action: input_select.set_options
         data:
           options: "{{ states.zone | map(attribute='entity_id') | list }}"
         target:
           entity_id: input_select.zones
         alias: Add zones to input select
-      - service: input_select.set_options
+      - action: input_select.set_options
         data:
           options: "{{ states.person | map(attribute='entity_id') | list }}"
         target:
           entity_id: input_select.person_entities
         alias: Add persons to input select
-      - service: input_select.set_options
+      - action: input_select.set_options
         data:
           options: >
             {{ states('input_text.zone_registration_config').replace('\'','\"') | from_json | map(attribute='name') | list }}
@@ -567,8 +571,8 @@ automation:
 
   - alias: 'Zone registration: Auto update input select when config changes'
     description: Read config from UI and select zone and person
-    trigger:
-    - platform: state
+    triggers:
+    - trigger: state
       entity_id: input_select.zone_registration_config
     condition: []
     action:
@@ -593,22 +597,22 @@ automation:
         config_name: |
           {% set options=(states('input_text.zone_registration_config','options').replace('\'','"')  | from_json) %} 
           {{ options[selected_config].name }}
-    - service: input_select.select_option
+    - action: input_select.select_option
       data:
         option: '{{ selected_person }}'
       target:
         entity_id: input_select.person_entities
-    - service: input_select.select_option
+    - action: input_select.select_option
       data:
         option: '{{ selected_zone }}'
       target:
         entity_id: input_select.zones
-    - service: input_text.set_value
+    - action: input_text.set_value
       data:
         value: '{{ config_name }}'
       target:
         entity_id: input_text.zone_registration_config_label
-    - service: homeassistant.update_entity
+    - action: homeassistant.update_entity
       data: {}
       target:
         entity_id: sensor.zone_registration_statistics
@@ -617,8 +621,8 @@ automation:
 
   - alias: "Zone registration: Register configured zone events"
     description: "Test configuration and update CSV based on zone enter and leave events"
-    trigger:
-      - platform: event
+    triggers:
+      - trigger: event
         event_type: state_changed
     condition:
       - condition: template
@@ -655,12 +659,12 @@ automation:
           filename: |
             {{ (zone_config.name | regex_replace(find='[^\\w]',
             replace='_')).replace('__','_').lower()+'.csv' }}
-      - service: shell_command.zone_registration
+      - action: shell_command.zone_registration
         data:
           entry: auto
           filename: "{{ filename }}"
         alias: Update CSV file
-      - service: homeassistant.update_entity
+      - action: homeassistant.update_entity
         data: {}
         target:
           entity_id: sensor.zone_registration_statistics
@@ -718,7 +722,7 @@ script:
             {%- endfor %}
           {%- endif %}
           {{ zone_reg.config }}
-    - service: input_text.set_value
+    - action: input_text.set_value
       data:
         value: '{{ zone_registration_config }}'
       target:
@@ -782,7 +786,7 @@ script:
           value_template: '{{ date is not defined and comment is not defined }}'
           alias: date and comment is undefined
         sequence:
-        - service: shell_command.zone_registration
+        - action: shell_command.zone_registration
           data:
             entry: '{{ entry_var }}'
             minutes: '{{ minutes_var }}'
@@ -794,7 +798,7 @@ script:
           value_template: '{{ date is not defined and comment is defined }}'
           alias: date is undefined and comment is defined
         sequence:
-        - service: shell_command.zone_registration
+        - action: shell_command.zone_registration
           data:
             entry: '{{ entry_var }}'
             minutes: '{{ minutes_var }}'
@@ -807,7 +811,7 @@ script:
           value_template: '{{ date is defined and comment is not defined }}'
           alias: date is defined and comment is undefined
         sequence:
-        - service: shell_command.zone_registration
+        - action: shell_command.zone_registration
           data:
             date: '{{ date_var[0:10] }}'
             entry: '{{ entry_var }}'
@@ -816,7 +820,7 @@ script:
             directory: '{{ directory_var }}'
             filename: '{{ filename_var }}'
       default:
-      - service: shell_command.zone_registration
+      - action: shell_command.zone_registration
         data:
           date: '{{ date_var[0:10] }}'
           entry: '{{ entry_var }}'
@@ -837,7 +841,7 @@ script:
           value_template: "{{ states('input_text.zone_registration_comment') | length == 0 }}"
           alias: If comment is empty
       then:
-        - service: shell_command.zone_registration
+        - action: shell_command.zone_registration
           data:
             date: >-
               {{ states('input_datetime.zone_registration_date_start') | as_timestamp
@@ -848,7 +852,7 @@ script:
               {{ states('sensor.zone_registration_filename') }}
           alias: Update CSV without comment
       else:
-        - service: shell_command.zone_registration
+        - action: shell_command.zone_registration
           data:
             date: >-
               {{ states('input_datetime.zone_registration_date_start') | as_timestamp
@@ -859,7 +863,7 @@ script:
             filename: >-
               {{ states('sensor.zone_registration_filename') }}
           alias: Update CSV with comment
-    - service: input_text.set_value
+    - action: input_text.set_value
       data:
         value: ''
       target:
@@ -869,7 +873,7 @@ script:
           entity_id: input_boolean.zone_registration_review
           state: "on"
       then:
-        - service: input_boolean.turn_off
+        - action: input_boolean.turn_off
           data:
             entity_id: input_boolean.zone_registration_review
     icon: mdi:file-delimited
@@ -899,7 +903,7 @@ script:
                     }}
                   alias: If comment is empty
               then:
-                - service: shell_command.zone_registration
+                - action: shell_command.zone_registration
                   data:
                     date: "{{ timestamp_counter | timestamp_custom('%Y-%m-%d') }}"
                     review: >-
@@ -910,7 +914,7 @@ script:
                       {{ states('sensor.zone_registration_filename') }}
                   alias: Update CSV without comment
               else:
-                - service: shell_command.zone_registration
+                - action: shell_command.zone_registration
                   data:
                     date: "{{ timestamp_counter | timestamp_custom('%Y-%m-%d') }}"
                     review: >-
@@ -929,11 +933,11 @@ script:
             entity_id: input_boolean.zone_registration_review
             state: "on"
         then:
-          - service: input_boolean.turn_off
+          - action: input_boolean.turn_off
             data:
               entity_id: input_boolean.zone_registration_review
         alias: Turn off review boolean
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           value: ""
         target:
@@ -946,7 +950,7 @@ script:
   zone_registration_remove_date_csv_from_lovelace:
     alias: 'Zone registration: Remove date from CSV from Lovelace GUI'
     sequence:
-      - service: shell_command.rm_date_zone_csv
+      - action: shell_command.rm_date_zone_csv
         data:
           date: >-
             {{ (states('input_datetime.zone_registration_date_start') | as_timestamp | timestamp_custom('%Y-%m-%d'))[0:10] }}
