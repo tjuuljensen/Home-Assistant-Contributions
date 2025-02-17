@@ -62,7 +62,7 @@
         - **Security options:** Enable 'Run whether user is logged on or not'. This will ensure that the execution window runs hidden.
         - **Conditions/Network:** Check 'Start only if the following network connection is available' and select the network on which you want the script to run.
         - **Triggers:** Add an 'On an event' trigger (Log: System, Source: Power-Troubleshooter, Event ID: 1). Triggers on resume from sleep.
-        - **Triggers:** Add an 'On an event' trigger (Custom, New event filter, XML). Add the following XML:
+        - **Triggers:** Add an 'On an event' trigger (Custom, New event filter, XML). Add the following XML which will trigger when AC power is disconnected:
             ```
             <QueryList>
                 <Query Id="0" Path="System">
@@ -70,7 +70,7 @@
                 </Query>
             </QueryList>
             ```
-        - Add another custom XML trigger like above, but change `Data='false'` to `Data='true'`.
+        - Add another custom XML trigger like above, but change `Data='false'` to `Data='true'`. Triggers when AC power is connected.
     - Additional attributes passed via `-SensorAttributes` as JSON are included as key-value pairs in the sensor update payload.
     - Parsing JSON to PowerShell scripts can be tricky. This format works when calling the script with -File (other formats might also work):
       '[{"""battery_alert_disabled""" : true}, {"""device_class""" : """battery""" },{"""state_class""" : """measurement"""}]'
@@ -81,6 +81,19 @@
     - PowerShell 5.1 or later
     - A long-lived access token generated in Home Assistant
     - Administrator privileges (for installing scheduled tasks)
+    - A sensor in Home Assistant made for the device. Use the following template to generate a template sensor:
+      ```
+        - sensor:
+            - name: "Laptop Battery"
+                unique_id: "laptop_battery"
+                state: "{{ this.state }}"
+                device_class: battery
+                state_class: measurement 
+                attributes:
+                status: "{{ this.attributes.status }}"
+                battery_state: "{{ this.attributes.battery_state }}"
+                time_remaining: "{{ this.attributes.time_remaining }}"  
+      ```
 
 .LINK
     For more details on Home Assistant long-lived access tokens:
@@ -145,6 +158,7 @@ function Send-DataToHomeAssistant($data) {
         "time_remaining" = $data.time_remaining
         "battery_state" = $data.battery_state
         "device_class" = "battery"
+        "unit_of_measurement" = "%"
     } 
     
     # Add additional attributes

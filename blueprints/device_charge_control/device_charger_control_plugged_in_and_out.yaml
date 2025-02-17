@@ -1,0 +1,315 @@
+blueprint:
+  name: Device Charge Control - for devices getting plugged in and out
+  domain: automation
+  description: 
+    "## Device Charge Control - for devices getting plugged in and out
+
+    Batteries in phones, laptops and other electronic devices are best treated when charge percentage is not always forced to full charge.
+    This blueprint is made to keep your device of choice between two battery charge thresholds. 
+    There are multiple use cases:
+
+    - Always keep your laptop plugged in, but ensure what it starts charging when battery gets below 20% and stops when passing 80%.
+
+    - You have a tablet which is always plugged in when you don't use it.
+
+    - You charge your phone at night, but want to make sure that is is never over-charged.
+        
+    
+    ### Requirements
+    
+    - a **battery sensor** with the battery level of the device you want to monitor. If you have a phone, the battery level sensor from the Home Assistant companion app will do it for you.
+
+    - a **device tracker** which shows whether the device with the battery it is online on your network.
+
+    - a **switch** entity for a power plug of some sort (Shelly, Hue, Fibaro, ...).
+
+    
+    ### Versions
+
+    There are two versions of this blueprint. **This is the first version** - made for devices getting *plugged in and out*:
+
+    1. For devices that gets **plugged in and out** (normal phone and laptop behavior). 
+
+    2. For **always-on** devices (for example cameras with batteries, hidden devices) that are always connected to a power plug.
+    
+
+    ### Automation logic explained
+
+    The automation will trigger on the following events:
+
+    - When the battery sensor gets updated (battery sensor)
+
+    - When the device goes offline (device tracker)
+
+    - When the device comes online (device tracker)
+
+    - When the power plug changes state from unavailable to off (switch)
+
+
+    Based on the states of the monitored entities the automation will perform the following actions:
+
+    - When battery level is within the threshold values --> do nothing.
+
+    - When battery level is below the minimum threshold value --> start charging.
+
+    - When battery level is above the maxmimum threshold value --> stop charging.
+
+    - When device tracker goes offline --> if below configured threshold value --> start short charging (else) ==> stop charging if power is on.
+
+    - When device tracker comes online --> --> start charging.
+
+    - When power plug is reconnected in state off --> start charging.
+
+
+    The two latter actions are safety measures, to avoid a potential situation with a non-powered device with a critical low battery.
+
+
+    ### Useful links
+
+    - [PowerShell script](https://raw.githubusercontent.com/tjuuljensen/HomeAssistantPackages/refs/heads/main/battery_charger/Send-LaptopBatteryStatus.ps1) to send battery state information from a Windows computer to Home Assistant.
+
+    - [Bash script](https://raw.githubusercontent.com/tjuuljensen/HomeAssistantPackages/refs/heads/main/battery_charger/send_laptop_battery_status.sh) to send battery state information from a Linux computer to Home Assistant.
+    
+    - [Another version](device_charger_control_always_on.yaml) of this blueprint - for **always on** devices.
+
+
+    ## Blueprint configuration
+
+    Please select your battery sensor, your device tracker and your switch below:
+
+    "
+  input:
+    battery_sensor:
+      name: Battery Sensor
+      description: The name of the entity holding the charge percent of the device with the battery that is being controlled by this blueprint
+      selector:
+        entity:
+          filter:
+            device_class: battery
+            domain: sensor
+    network_device_tracker:
+      name: Network Device Tracker
+      description: The name of a device tracker which monitors the device with the battery entity (for example a specific laptop device tracker)
+      selector:
+        entity:
+          filter:
+            domain: device_tracker
+    power_switch:
+      name: Device Power Switch
+      description: he switch that controls the power delivery (like a shelly or Hue plug or similar).
+      selector:
+        entity:
+          filter:
+            domain: switch
+    threshold_configuration:
+      name: Threshold configuration
+      icon: mdi:battery-medium
+      description: The thresholds used to control the charging
+      input:
+        battery_charge_min:
+          name: Start charging when battery percentage falls below
+          selector:
+            number:
+              min: 1
+              max: 49
+              step: 1
+              mode: slider
+              unit_of_measurement: '%'
+          default: 20
+        battery_charge_max:
+          name: Stop charging when battery percentage is above
+          selector:
+            number:
+              min: 50
+              max: 100
+              step: 1
+              mode: slider
+              unit_of_measurement: '%'
+          default: 80
+    other_options:
+      name: Other options
+      icon: mdi:battery-clock-outline
+      collapsed: true
+      description: Optional configuration for safety charging when going offline
+      input:
+        charge_when_offline_state_below:
+          name: Charge when going offline and battery state is below battery percentage
+          selector:
+            number:
+              min: 1
+              max: 75
+              step: 1
+              mode: slider
+              unit_of_measurement: '%'
+          default: 40
+        chargetime_when_going_offline:
+          name: Time to charge when going offline
+          selector:
+            number:
+              min: 0
+              max: 30
+              step: 1
+              mode: slider
+              unit_of_measurement: 'minutes'
+          default: 15
+triggers:
+  - alias: When battery sensor is updated
+    trigger: state
+    entity_id: !input battery_sensor
+    id: battery_state_change
+  - trigger: state
+    entity_id: !input network_device_tracker
+    to: not_home
+    for:
+      seconds: 5
+    id: device_went_offline
+    alias: When device goes offline
+  - trigger: state
+    entity_id: !input network_device_tracker
+    to: home
+    for:
+      seconds: 3
+    alias: When Device Tracker comes online for 3 seconds
+    id: device_came_online
+  - trigger: state
+    entity_id: !input power_switch
+    from: unavailable
+    to: 'off'
+    id: plug_reconnects_in_state_off
+actions:
+  - choose:
+    - conditions:
+      - alias: 'Battery state is unknown or unavailable'
+        condition: or
+        conditions:
+        - condition: state
+          entity_id: !input battery_sensor
+          state: unavailable
+          alias: If battery sensor state is unavailable
+        - condition: state
+          entity_id: !input battery_sensor
+          state: unknown
+          alias: If battery sensor state is unknown
+      sequence:
+        - stop: 'No action required as battery is unknown or unavailable'
+    - conditions:
+      - alias: Laptop battery is within threshold limits
+        condition: numeric_state
+        entity_id: !input battery_sensor
+        below: !input battery_charge_max
+        above: !input battery_charge_min
+      - condition: trigger
+        id: battery_state_change
+      sequence:
+      - stop: 'No action required as battery is within threshold limits'
+    - conditions:
+      - alias: Laptop battery is below threshold limit
+        condition: numeric_state
+        entity_id: !input battery_sensor
+        below: !input battery_charge_min
+      - condition: trigger
+        id: battery_state_change
+      sequence:
+      - if:
+        - condition: state
+          entity_id: !input power_switch
+          state: 'off'
+        then:
+        - action: switch.turn_on
+          metadata: {}
+          data: {}
+          target:
+            entity_id: !input power_switch
+    - conditions:
+      - alias: Laptop battery is above threshold limit
+        condition: numeric_state
+        entity_id: !input battery_sensor
+        above: !input battery_charge_max
+      - condition: trigger
+        id: battery_state_change
+      sequence:
+      - if:
+        - condition: state
+          entity_id: !input power_switch
+          state: 'on'
+        then:
+        - action: switch.turn_off
+          metadata: {}
+          data: {}
+          target:
+            entity_id: !input power_switch
+    - conditions:
+      - condition: trigger
+        id: device_went_offline
+      sequence:
+      - choose:
+        - conditions:
+          - condition: numeric_state
+            above: !input charge_when_offline_state_below
+            entity_id: !input battery_sensor
+            alias: If battery is above variable charge_when_offline_state_below
+          - condition: state
+            entity_id: !input power_switch
+            state: 'on'
+          sequence:
+          - action: switch.turn_off
+            metadata: {}
+            data: {}
+            target:
+              entity_id: !input power_switch
+        - conditions:
+          - alias: If battery is below or equal to variable charge_when_offline_state_below.
+            condition: numeric_state
+            entity_id: !input battery_sensor
+            below: !input charge_when_offline_state_below
+          sequence:
+          - alias: Do a short charge period before turning off as battery is less than variable charge_when_offline_state_below.
+            if:
+            - condition: state
+              entity_id: !input power_switch
+              state: 'on'
+            then:
+            - delay:
+                minutes: !input chargetime_when_going_offline
+            - action: switch.turn_off
+              metadata: {}
+              data: {}
+              target:
+                entity_id: !input power_switch
+            else:
+            - action: switch.turn_on
+              metadata: {}
+              data: {}
+              target:
+                entity_id: !input power_switch
+            - delay:
+                minutes: !input chargetime_when_going_offline
+            - action: switch.turn_off
+              metadata: {}
+              data: {}
+              target:
+                entity_id: !input power_switch
+    - conditions:
+      - condition: trigger
+        id: plug_reconnects_in_state_off
+      sequence:
+      - action: switch.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: !input power_switch
+      alias: Resume charging if device charging plug reconnects
+    - conditions:
+        - condition: trigger
+          id: device_came_online
+        - condition: state
+          entity_id: !input power_switch
+          state: 'off'
+      sequence:
+        - alias: Always resume charging when coming online
+          action: switch.turn_on
+          metadata: {}
+          data: {}
+          target:
+            entity_id: !input power_switch
+mode: restart

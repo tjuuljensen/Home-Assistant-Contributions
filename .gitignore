@@ -4,13 +4,16 @@
 *
 
 # Whitelisted files/folders - prefixed with !
-!battery_alert/
-!battery_charger/
-!garmin_livetrack/
-!hue_motion_sensor_sensitivity/
-!pollen_denmark/
-!pollen_denmark/images/
-!zone_registration/
+!blueprints/device_charge_control
+!blueprints/device_charge_control/scripts
+!blueprints/
+!packages/
+!packages/battery_alert/
+!packages/garmin_livetrack/
+!packages/hue_motion_sensor_sensitivity/
+!packages/pollen_denmark/
+!packages/pollen_denmark/images/
+!packages/zone_registration/
 
 !*.yaml
 !*.md
