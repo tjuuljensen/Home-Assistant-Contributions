@@ -66,11 +66,11 @@ blueprint:
 
     ### Useful links
 
-    - [PowerShell script](https://raw.githubusercontent.com/tjuuljensen/HomeAssistantPackages/refs/heads/main/battery_charger/Send-LaptopBatteryStatus.ps1) to send battery state information from a Windows computer to Home Assistant.
+    - [PowerShell script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/Send-LaptopBatteryStatus.ps1) to send battery state information from a Windows computer to Home Assistant.
 
-    - [Bash script](https://raw.githubusercontent.com/tjuuljensen/HomeAssistantPackages/refs/heads/main/battery_charger/send_laptop_battery_status.sh) to send battery state information from a Linux computer to Home Assistant.
+    - [Bash script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/send_laptop_battery_status.sh) to send battery state information from a Linux computer to Home Assistant.
     
-    - [Another version](device_charger_control_always_on.yaml) of this blueprint - for **always on** devices.
+    - [Another version](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/device_charger_control_always_on.yaml) of this blueprint - for **always on** devices.
 
 
     ## Blueprint configuration
