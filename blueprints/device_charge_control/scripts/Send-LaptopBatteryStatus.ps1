@@ -33,7 +33,7 @@
     '[{"""battery_alert_disabled""": true}, {"""state_class""": """measurement"""}}'
     
 .PARAMETER Install
-    [Optional] If specified, the script will install itself as a scheduled task with default settings. 
+    [Optional] If specified, the script will install itself as a scheduled task running every 5 minutes and at startup. 
     Additional triggers (e.g., event-based) must be added manually in Task Scheduler.
 
 .EXAMPLE
@@ -53,7 +53,8 @@
 .NOTES
     Author: Torsten Juul-Jensen
     Created: January 8, 2025
-    Version: 1.3.0
+    Version: 1.4.0
+    Version comment: Scheduled task trigger was fixed. It now runs for more than a single day. :-)
 
     IMPORTANT!
     - To configure custom triggers in Task Scheduler (e.g., event-based triggers), 
@@ -212,11 +213,22 @@ function Install-ScheduledTask {
         -DontStopIfGoingOnBatteries `
         -StartWhenAvailable
 
-    # Task triggers
-    $triggers = @(
-        New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 1)
+    # Define the repeating trigger: Daily at midnight, repeats every 5 minutes for 24 hours
+    # Using this two-step approach is a workaround as PowerShell cannot create a daily trigger with 5 minute repetition intervals.
+    $dailyTrigger = New-ScheduledTaskTrigger -Daily -At 00:00
+    $tempTrigger = New-ScheduledTaskTrigger -Once -At 00:00 `
+        -RepetitionInterval (New-TimeSpan -Minutes 5) `
+        -RepetitionDuration (New-TimeSpan -Hours 23 -Minutes 55)
+
+    $dailyTrigger.Repetition = $tempTrigger.Repetition
+
+    # Other task triggers 
+    $additionalTriggers = @(
         New-ScheduledTaskTrigger -AtStartup
     )
+
+    # Combine all triggers
+    $triggers = $AdditionalTriggers + $dailyTrigger
 
     # Task action
     $SensorAttributes = $SensorAttributes.Replace('"','"""') # Replae to match JSON requirements from command line
@@ -229,7 +241,7 @@ function Install-ScheduledTask {
                                -Action $action `
                                -Trigger $triggers `
                                -Settings $settings `
-                               -Description "Send battery data to Home Assistant."
+                               -Description "Send battery data to Home Assistant every 5 minutes."
         Write-Output "Scheduled task created successfully."
         Write-Output "IMPORTANT: Update Task Scheduler settings as described in the script header."
     } catch {
