@@ -11,8 +11,8 @@
 # 1.0.0 (2025-02-15)
 #  Added
 #  - Version 1.0.0 created
-#  - For each pollen type there are 4 sensors; for each region there is one rest sensor and one template sensor. This maskes a total of 32 sensors fo pollen alone.
-#  - Each pollen sensor has additional attributes: level_mesurement, use_forecast, level_today, pollen_update_time and pollenfeed_last_fetched.
+#  - For each pollen type there are 4 sensors as each region have one rest sensor and one template sensor. This maskes a total of 32 sensors for pollen alone.
+#  - Each pollen sensor has additional attributes: level_measurement, use_forecast, level_today, pollen_update_time and pollenfeed_last_fetched.
 #
 #  Breaking Changes (if upgrading from pollen_dk integration)
 #  - Predictions are now more precisely named forecasts. Furthermore is the date format in attribute changed into ISO format (YYYY-MM-DD). 
@@ -23,7 +23,7 @@
 #  - If any allergies are added in the input text field, they will *always* on top of list.
 #  - Todays reading are now color coded in sync with the forecast colors (high/moderate/low). Took some tweaking to make that work. 
 #  - When measurements are not displaing data for the actual day (from midnight until daily update), measurements are now greyed out and shown in parenthesis.
-#  - Apexchart graph now has different y-axis for spores (cladosporium and alternaria). Other wise the graph is hard to make sense of when for example 
+#  - Apexchart graph now has different y-axis for spores (cladosporium and alternaria). Otherwise the graph is hard to make sense of when for example 
 #    alternaria has a spore count of 2000+ and grass is ~30.
 #  
 #  Changed (update routine)
@@ -33,6 +33,14 @@
 #
 #  Note
 #  - The package and the cards are designed for having all sensors from east and west included. 
+#
+# 
+# 1.1.0 (2025-02-18)
+#  Changed
+#  - Use forecast attribute changed to accomodate for situations where pollen feed has not been updated and forecasts are in the past.
+#  - This condition will make the attribute of the pollen sensor 'Level Today' return 'Old data'.
+#  - Markdown lovelace card updated to only show forecasts from current day and forward.
+#  - Extra checks on markdown card to catch invalid state when sensor is in season and forecast is false but only historic forecasts are available
 #
 ################################################
 ## Explainer
@@ -100,7 +108,7 @@
 ################################################ 
 ## Known issues
 ################################################
-#
+# 
 # 
 #
 ################################################ 
@@ -427,7 +435,7 @@
 #           <thead>
 #           <tr>
 #           <th align='left'>Type</th><th align='right'>Pollen</th>
-#           {% for pollen in state_attr(ns.pollen_entity, "forecasts") -%}
+#           {% for pollen in state_attr(ns.pollen_entity, "forecasts") | selectattr('date','ge',(states('sensor.pollen_timestamp_start_of_today') | as_datetime | as_local).strftime('%Y-%m-%d')) | list -%}
 #             <th>{{ weekdaynames[strptime(pollen.date, '%Y-%m-%d').isoweekday()-1] }}</th>
 #           {% endfor -%}
 #           </tr>
@@ -436,7 +444,7 @@
 #           {% for ps in sorted_entities -%}
 #               <tr>
 #               <td>{{ state_attr(ps,'friendly_name') | regex_replace(find='Pollen ', replace='') | regex_replace(find='Øst', replace='') | regex_replace(find='Vest', replace='') }}</td>
-#               <td align='center'> {% if is_state_attr(ps,'use_forecast',true) -%}<span>({{ states(ps) }})</span>
+#               <td align='center'> {% if is_state_attr(ps,'use_forecast',true) or states('sensor.pollen_update_time') | as_datetime | as_timestamp < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}<span>({{ states(ps) }})</span>
 #                   {% elif is_state_attr(ps,'level_today','High') -%}<i>{{ states(ps) }}</i>
 #                   {% elif is_state_attr(ps,'level_today','Moderate') -%}<b>{{ states(ps) }}</b>
 #                   {% elif is_state_attr(ps,'level_today','Low') -%}<tt>{{ states(ps) }}</tt>
@@ -444,7 +452,7 @@
 #                   {% else -%}
 #                   {% endif -%}</td>
 #               {% if state_attr(ps, "forecasts")!=[]  -%}
-#                 {% for pollen in state_attr(ps, "forecasts") -%}
+#                 {% for pollen in state_attr(ps, "forecasts") | selectattr('date','ge',(states('sensor.pollen_timestamp_start_of_today') | as_datetime | as_local).strftime('%Y-%m-%d')) | list -%}
 #                 <td align='right'>
 #                   {% if pollen.level==3 -%}<ha-alert alert-type="error"></ha-alert>
 #                   {% elif pollen.level==2 -%}<ha-alert alert-type="warning"></ha-alert>
@@ -480,6 +488,7 @@
 #           tt {color: #4caf50;}
 #           b {color: #ffa500;font-style: normal;}
 #           i {color: #db4437;font-style: normal;}
+
 # 
 #
 ################################################
@@ -715,22 +724,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
-        {{  use_forecast -}}
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+        {{ use_forecast }}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -739,6 +750,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -793,22 +806,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
-        {{  use_forecast -}}
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
+        {{ use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -817,6 +832,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -871,22 +888,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -895,6 +914,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -949,22 +970,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -973,6 +996,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1028,22 +1053,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1052,6 +1079,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1106,22 +1135,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1130,6 +1161,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1185,22 +1218,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1209,6 +1244,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1264,22 +1301,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1288,6 +1327,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1346,22 +1387,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1370,6 +1413,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1424,22 +1469,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1448,6 +1495,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1502,22 +1551,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1526,6 +1577,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1580,22 +1633,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1604,6 +1659,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1659,22 +1716,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1683,6 +1742,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1737,22 +1798,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1761,6 +1824,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1816,22 +1881,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1840,6 +1907,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
@@ -1895,22 +1964,24 @@ template:
           Moderate
         {% endif -%}
       use_forecast: | 
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {% set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}     
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}    
         {{  use_forecast -}}
       level_today: |
         {%- set pollen_thresholds = {'birk':[30,100],'el':[10,50],'graes':[10,50],'bynke':[10,50],'elm':[10,50],'hassel':[5,15],'alternaria':[20,100],'cladosporium':[2000,6000]} -%}
         {%- set thresholds = pollen_thresholds[this.attributes.pollen_name] -%}
-        {%- set last_update =  (states('sensor.pollen_update_time') | as_datetime).strftime('%d-%m-%Y') -%}
-        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast -%}
+        {%- set last_update = states('sensor.pollen_update_time') | as_timestamp -%}
+        {%- set forecasts = (states(this.attributes.source_sensor).replace('d','date').replace('v','level') | from_json).forecast %}
         {%- set inSeason = (states(this.attributes.source_sensor)| from_json).season -%}
         {%- set use_forecast = false if not inSeason else 
-                (forecasts[0].date | string)[0:10] == states('sensor.date') 
-                and last_update != states('sensor.date') -%}        
+                (forecasts[0].date | as_timestamp) <= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and (forecasts[-1].date | as_timestamp) >= states('sensor.pollen_timestamp_start_of_today') | float(0) 
+                and last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
         {%- if use_forecast -%}
           {%- if forecasts[0].level == 1 -%}
             Low
@@ -1919,6 +1990,8 @@ template:
           {%- elif forecasts[0].level == 3 -%}
             High  
           {%- endif -%}
+        {%- elif last_update < states('sensor.pollen_timestamp_start_of_today') | float(0) -%}
+            Old data
         {%- else -%}
           {%- set last_pollen_reading = (states(this.attributes.source_sensor) | from_json).level | int(0) -%}
           {%- if last_pollen_reading == -1 -%}
