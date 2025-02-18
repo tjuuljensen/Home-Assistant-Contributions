@@ -42,6 +42,10 @@
 #  - Markdown lovelace card updated to only show forecasts from current day and forward.
 #  - Extra checks on markdown card to catch invalid state when sensor is in season and forecast is false but only historic forecasts are available
 #
+# 1.1.1 (2025-02-18)
+#  Note
+#  - Preconditions updated. No functional changes.
+#
 ################################################
 ## Explainer
 ################################################
@@ -166,8 +170,10 @@
 ################################################
 # 
 # - a working package configuration - https://www.home-assistant.io/docs/configuration/packages/
-# - card-mod (to modify text colors in the markdown card) - https://github.com/thomasloven/lovelace-card-mod
-# - apexchart (for graphs) - https://github.com/RomRider/apexcharts-card
+# - lovelace-hui-element (to enable markdown card modificaion) - https://github.com/thomasloven/lovelace-hui-element
+# - lovelace-card-mod (to modify text colors in the markdown card) - https://github.com/thomasloven/lovelace-card-mod
+# - apexcharts-card (for graphs) - https://github.com/RomRider/apexcharts-card
+# - lovelace-auto-entities (to keep apexcharts clean of out-of season sensors) - https://github.com/thomasloven/lovelace-auto-entities
 #
 ################################################ 
 ## Installation
