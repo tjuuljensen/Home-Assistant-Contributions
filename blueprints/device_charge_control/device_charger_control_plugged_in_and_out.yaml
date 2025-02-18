@@ -1,8 +1,27 @@
+# Controls charging of a device with a battery sensor getting "plugged in and out" using an attached power pplug.
+# device_charger_control_always_on.yaml
+#
+## Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+#
+#
+################################################
+## Changelog
+################################################
+#
+# 0.1.0 (2025-02-17)
+#   Added
+#   - Version 0.1.0 created
+
+################################################
+## Blueprint
+################################################
+
 blueprint:
   name: Device Charge Control - for devices getting plugged in and out
   domain: automation
-  description: 
-    "## Device Charge Control - for devices getting plugged in and out
+  author: Torsten Juul-Jensen
+  description: |
+    ## Device Charge Control - for devices getting plugged in and out
 
     Batteries in phones, laptops and other electronic devices are best treated when charge percentage is not always forced to full charge.
     This blueprint is made to keep your device of choice between two battery charge thresholds. 
@@ -76,8 +95,6 @@ blueprint:
     ## Blueprint configuration
 
     Please select your battery sensor, your device tracker and your switch below:
-
-    "
   input:
     battery_sensor:
       name: Battery Sensor
