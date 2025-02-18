@@ -1,0 +1,165 @@
+# Copy or move contents of a Home Assistant to-do list from one to another 
+# copy_move_todo_list.yaml
+#
+## Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+#
+#
+################################################
+## Changelog
+################################################
+#
+# 0.1.0 (2025-02-15)
+#   Added
+#   - Version 0.1.0 created
+# 0.2.0 (2025-02-18)
+#   Changed
+#   - Filter selection improved to avoid unintended states.
+#   Note
+#   - Description updated to explain limitations in blueprint.
+#
+
+################################################
+## Blueprint
+################################################
+
+blueprint:
+  name: Copy/move to-do list
+  domain: script
+  author: Torsten Juul-Jensen
+  description: |
+    ## Copy/move to-do list
+    
+    Copy or moves the content of a to-to list to another.
+    
+    ### How to use
+    
+    - Select your source to-do list to copy from
+    - Select your destination to-do list
+    - Optionally deselect the status entries you want to filter out
+    - Optionally select 'Move list' to remove the item from the source list after copy
+
+    ### Known issues
+
+    - If copying or moving entries into another to-do list who has entries with the *same name*, 
+      records will not be overwritten, but end up being duplicated in the destination list. 
+    - Items with *trailing spaces* will fail. 
+    
+    This is due to limitations in the current Home Assistant to-do actions available.
+
+  input:
+    source:
+      name: Source list
+      selector:
+        entity:
+          domain: todo
+      description: "Source list to copy from"
+    destination:
+      name: Destination list
+      selector:
+        entity:
+          domain: todo
+      description: "Destination list to copy to"
+    filter:
+      name: Filter
+      selector:
+        select:
+          multiple: true
+          options:
+            - completed
+            - needs_action
+      description: "Filter status types from source list. A filter without selections will return no entries and will do nothing."
+      default:
+        - completed
+        - needs_action
+    move:
+      name: Move list
+      selector:
+        boolean:
+      description: "Move items to destination list (delete after copy)"
+      default: false
+sequence:
+  - variables:
+      filter: !input filter
+      source: !input source
+      destination: !input destination
+  - choose:
+      - conditions:
+          - alias: Filter is empty
+            condition: template
+            value_template: "{{ filter | length == 0 }}"
+        sequence:
+          - stop: >-
+              Filter is enabled but is empty. All source items are filtered out.
+              Nothing to do.
+    default:
+      - action: todo.get_items
+        data:
+          status: "{{ filter }}"
+        response_variable: items
+        target:
+          entity_id: "{{ source }}"
+        alias: Get filtered source to-do items
+  - alias: "Loop through all selected source items and update destination to-do list "
+    repeat:
+      for_each: >
+        {% set list_name = items.keys() | list %} {{
+        items[list_name[0]]['items'] }}
+      sequence:
+        - action: todo.add_item
+          data:
+            item: "{{ repeat.item.summary }}"
+            entity_id: "{{ destination }}"
+        - action: todo.update_item
+          data:
+            item: "{{ repeat.item.summary }}"
+            status: "{{ repeat.item.status }}"
+          target:
+            entity_id: "{{ destination }}"
+        - if:
+            - alias: Description is defined
+              condition: template
+              value_template: "{{ repeat.item.description is defined }}"
+          then:
+            - alias: Update description
+              action: todo.update_item
+              data:
+                item: "{{ repeat.item.summary }}"
+                description: "{{ repeat.item.description }}"
+              target:
+                entity_id: "{{ destination }}"
+        - if:
+            - alias: Due date is defined
+              condition: template
+              value_template: "{{ repeat.item.due is defined }}"
+          then:
+            - if:
+                - alias: Item has date only
+                  condition: template
+                  value_template: "{{ repeat.item.due | length() == 10 }}"
+              then:
+                - alias: Update with date only
+                  action: todo.update_item
+                  data:
+                    item: "{{ repeat.item.summary }}"
+                    due_date: "{{ repeat.item.due }}"
+                  target:
+                    entity_id: "{{ destination }}"
+              else:
+                - alias: Update with date/time
+                  action: todo.update_item
+                  data:
+                    item: "{{ repeat.item.summary }}"
+                    due_datetime: "{{ repeat.item.due }}"
+                  target:
+                    entity_id: "{{ destination }}"
+        - if:
+            - alias: Move items option is selected
+              condition: template
+              value_template: "{{ move == True }}"
+          then:
+            - alias: Remove item from source list
+              action: todo.remove_item
+              data:
+                item: "{{ repeat.item.summary }}"
+              target:
+                entity_id: "{{ source }}"

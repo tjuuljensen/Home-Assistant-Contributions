@@ -4,11 +4,13 @@
 *
 
 # Whitelisted files/folders - prefixed with !
+!blueprints/copy_move_todo_list
 !blueprints/device_charge_control
 !blueprints/device_charge_control/scripts
 !blueprints/
 !packages/
 !packages/battery_alert/
+!packages/copy_move_todo_list
 !packages/garmin_livetrack/
 !packages/hue_motion_sensor_sensitivity/
 !packages/pollen_denmark/
