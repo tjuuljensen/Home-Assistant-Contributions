@@ -10,6 +10,10 @@
 # 1.0.0 (2023-09-12)
 #   Added
 #   - Version 1.0.0 created
+#
+# 1.0.1 (2025-02-19)
+#   Changed
+#   - Automation and script syntax updated (no functional changes)
 # 
 ################################################
 ## Explainer
@@ -309,23 +313,23 @@ automation:
 
   - alias: 'Hue motion sensor: Multihub fetch data when input selects change'
     description: Update Value when input select changes
-    trigger:
-    - platform: state
+    triggers:
+    - trigger: state
       entity_id:
       - input_select.hue_hubs
       id: hub_change
-    - platform: template
+    - trigger: template
       value_template: '{{ is_state(''sensor.hue_motion_sensor_hub_data'',''unknown'')
         }}'
       alias: When hub identifier number is unknown
       id: hub_identifier_unknown
-    - platform: state
+    - trigger: state
       entity_id:
       - input_select.hue_hubs
       from: Undefined
       id: after_start
     condition: []
-    action:
+    actions:
     - choose:
       - conditions:
         - condition: trigger
@@ -338,13 +342,13 @@ automation:
               value_template: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[0].name
                 == states(''input_select.hue_hubs'') }}'
             sequence:
-            - service: input_text.set_value
+            - action: input_text.set_value
               data:
                 value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[0].ip
                   }}'
               target:
                 entity_id: input_text.hue_hub_ip
-            - service: input_text.set_value
+            - action: input_text.set_value
               data:
                 value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[0].user
                   }}'
@@ -355,13 +359,13 @@ automation:
               value_template: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[1].name
                 == states(''input_select.hue_hubs'') }}'
             sequence:
-            - service: input_text.set_value
+            - action: input_text.set_value
               data:
                 value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[1].ip
                   }}'
               target:
                 entity_id: input_text.hue_hub_ip
-            - service: input_text.set_value
+            - action: input_text.set_value
               data:
                 value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[1].user
                   }}'
@@ -378,7 +382,7 @@ automation:
             count: '{{ (state_attr(''input_select.hue_hubs'',''options'') | length)-1
               }}'
             sequence:
-            - service: input_select.select_next
+            - action: input_select.select_next
               data:
                 cycle: true
               target:
@@ -389,13 +393,13 @@ automation:
                   value_template: '{{ (states(''input_text.hue_hubs'',''options'') |
                     from_json)[0].name == states(''input_select.hue_hubs'') }}'
                 sequence:
-                - service: input_text.set_value
+                - action: input_text.set_value
                   data:
                     value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[0].ip
                       }}'
                   target:
                     entity_id: input_text.hue_hub_ip
-                - service: input_text.set_value
+                - action: input_text.set_value
                   data:
                     value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[0].user
                       }}'
@@ -406,13 +410,13 @@ automation:
                   value_template: '{{ (states(''input_text.hue_hubs'',''options'') |
                     from_json)[1].name == states(''input_select.hue_hubs'') }}'
                 sequence:
-                - service: input_text.set_value
+                - action: input_text.set_value
                   data:
                     value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[1].ip
                       }}'
                   target:
                     entity_id: input_text.hue_hub_ip
-                - service: input_text.set_value
+                - action: input_text.set_value
                   data:
                     value: '{{ (states(''input_text.hue_hubs'',''options'') | from_json)[1].user
                       }}'
@@ -420,7 +424,7 @@ automation:
                     entity_id: input_text.hue_hub_username
               alias: Update Hub IP and username
               enabled: true
-            - service: homeassistant.update_entity
+            - action: homeassistant.update_entity
               data: {}
               target:
                 entity_id: sensor.hue_motion_sensor_hub_data
@@ -438,7 +442,7 @@ automation:
                   != states(''input_select.hue_motion_sensitivity'')  }}'
                 alias: Selected sensitivity in UI differs from sensor sensitivity
               then:
-              - service: input_select.select_option
+              - action: input_select.select_option
                 data:
                   option: '{{ state_attr(''input_select.hue_motion_sensitivity'',''options'')[int(state_attr(''sensor.hue_motion_sensor_hub_data'',''sensitivity''),0)]
                     }}'
@@ -452,29 +456,29 @@ automation:
   
   - alias: 'Hue motion sensor: Fill input selects with data'
     description: Based on the attribute sensitivitymax, the sensitivity selector has 3 or 5 levels to choose from
-    trigger:
-    - platform: template
+    triggers:
+    - trigger: template
       value_template: '{{ state_attr(''sensor.hue_motion_sensor_hub_data'',''sensitivitymax'')==2 }}'
       id: sensitivity_basic
       alias: When sensitivity of sensor is basic (three levels)
-    - platform: template
+    - trigger: template
       value_template: '{{ state_attr(''sensor.hue_motion_sensor_hub_data'',''sensitivitymax'')==4 }}'
       id: sensitivity_advanced
       alias: When sensitivity of sensor is advanced (five levels)
-    - platform: homeassistant
+    - trigger: homeassistant
       event: start
       id: start
-    - platform: event
+    - trigger: event
       id: reload
       event_type: event_template_reloaded
     condition: []
-    action:
+    actions:
     - choose:
       - conditions:
         - condition: trigger
           id: sensitivity_basic
         sequence:
-        - service: input_select.set_options
+        - action: input_select.set_options
           data:
             options:
             - Low
@@ -486,7 +490,7 @@ automation:
         - condition: trigger
           id: sensitivity_advanced
         sequence:
-        - service: input_select.set_options
+        - action: input_select.set_options
           data:
             options:
             - Very low
@@ -500,7 +504,7 @@ automation:
         - condition: trigger
           id: start
         sequence:
-        - service: input_select.set_options
+        - action: input_select.set_options
           data:
             options: "{{ states.binary_sensor | selectattr('attributes.device_class',
               'defined') | selectattr('attributes.device_class','eq','motion') 
@@ -512,13 +516,13 @@ automation:
           target:
             entity_id: input_select.motion_sensor_entities
           alias: Use Service to add all Hue motion sensors to input select
-        - service: input_select.set_options
+        - action: input_select.set_options
           data:
             options: '{{ states(''input_text.hue_hubs'') | from_json | map(attribute=''name'') | list }}'
           target:
             entity_id: input_select.hue_hubs
           alias: Update hubs in hue hub input select
-    - service: input_select.select_option
+    - action: input_select.select_option
       data:
         option: '{{ state_attr(''input_select.hue_motion_sensitivity'',''options'')[int(state_attr(''sensor.hue_motion_sensor_hub_data'',''sensitivity''),0)] }}'
       target:
@@ -530,25 +534,25 @@ automation:
 
   - alias: 'Hue motion sensor: Refresh data when selected sensor changes'
     description: Update value when input select changes
-    trigger:
-    - platform: state
+    triggers:
+    - trigger: state
       entity_id:
       - input_select.motion_sensor_entities
       id: entity_updated
     condition: []
-    action:
+    actions:
     - choose:
       - conditions:
         - condition: trigger
           id:
           - entity_updated
         sequence:
-        - service: homeassistant.update_entity
+        - action: homeassistant.update_entity
           data: {}
           target:
             entity_id: sensor.hue_motion_sensor_hub_data
           alias: Get hub data for the selected sensor
-        - service: input_select.select_option
+        - action: input_select.select_option
           data:
             option: '{{ state_attr(''input_select.hue_motion_sensitivity'',''options'')[int(state_attr(''sensor.hue_motion_sensor_hub_data'',''sensitivity''),0)] }}'
           target:
@@ -567,7 +571,7 @@ script:
   hue_motion_sensors_populate_hue_sensor_input_select:
     alias: 'Hue motion sensor: Fill Hue sensor input selects'
     sequence:
-    - service: input_select.set_options
+    - action: input_select.set_options
       data:
         options: "{{ states.binary_sensor | selectattr('attributes.device_class',
               'defined') | selectattr('attributes.device_class','eq','motion') 
@@ -579,7 +583,7 @@ script:
       target:
         entity_id: input_select.motion_sensor_entities
       alias: Update motion sensor input select with sensors not having an entity_id attribute (group) or is unavailable
-    - service: input_select.set_options
+    - action: input_select.set_options
       data:
         options: '{{ states(''input_text.hue_hubs'') | from_json | map(attribute=''name'') | list }}'
       target:
@@ -592,9 +596,9 @@ script:
   hue_motion_sensor_write_config_to_sensor:
     alias: 'Hue motion sensor: Write config to sensor'
     sequence:
-    - service: shell_command.set_hue_motion_sensor_sensitivity
+    - action: shell_command.set_hue_motion_sensor_sensitivity
       data: {}
-    - service: homeassistant.update_entity
+    - action: homeassistant.update_entity
       data: {}
       target:
         entity_id: sensor.hue_motion_sensor_hub_data
@@ -605,7 +609,7 @@ script:
   hue_motion_sensor_register_hub_user:
     alias: 'Hue motion sensor: Register hub user'
     sequence:
-    - service: shell_command.hue_hub_register_user
+    - action: shell_command.hue_hub_register_user
       data: {}
       response_variable: cmd_stdout
       alias: Create hub user using Hue API command from shell
@@ -655,7 +659,7 @@ script:
           states('input_text.hue_hub_username') == 'link button not pressed'}}"
         alias: username field is empty or contains 'link button not pressed' string
       then:
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           entity_id: input_text.hue_hub_username
           value: '{{ return_string }}'
@@ -666,13 +670,13 @@ script:
         value_template: '{{ user_created == true }}'
         alias: If user was created from shell command line
       then:
-      - service: input_text.set_value
+      - action: input_text.set_value
         data:
           value: "{{ hub_config }}"
         target:
           entity_id: input_text.hue_hubs
         alias: Set hue hubs field to new JSON string from hub_config variable
-      - service: input_select.set_options
+      - action: input_select.set_options
         data:
           options: "{{ states('input_text.hue_hubs') | from_json | map(attribute='name') | list }}"
         target:
