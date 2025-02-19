@@ -59,7 +59,7 @@ A collection of my  [Home Assistant](https://www.home-assistant.io/) packages an
 > **Focus**: Quickly transfer tasks from one Home Assistant to-do list to another with optional filtering and an easy “move” feature that removes items from the source after copying.
 
 - **Usage**: Ideal for tidying up tasks, merging project lists, or splitting large lists into smaller ones. It saves time and helps maintain clean, organized to-do lists without manual copying or deleting.
-- **Package version**: This is also available as a package (for more flexible use to run different actions) [here](#package-copymove-to-do-list).
+- **Package version**: This is also available as a package (more flexible when running different actions) [here](#package-copymove-to-do-list).
 - **Installation**: Click the button below to import it directly into your Home Assistant.
 
 [![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint file.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://github.com/tjuuljensen/Home-Assistant-Contributions/raw/refs/heads/main/blueprints/copy_move_todo_list/copy_move_todo_list.yaml)
