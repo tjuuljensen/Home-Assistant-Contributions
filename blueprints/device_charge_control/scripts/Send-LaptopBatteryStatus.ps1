@@ -53,13 +53,24 @@
 .NOTES
     Author: Torsten Juul-Jensen
     Created: January 8, 2025
-    Version: 1.4.0
-    Version comment: Scheduled task trigger was fixed. It now runs for more than a single day. :-)
+    Version: 1.5.0
+    Version comment: EasyInstall option added. Uses temporary XML file to create a complete Scheduled Task with all triggers. 
 
-    IMPORTANT!
-    - To configure custom triggers in Task Scheduler (e.g., event-based triggers), 
-      refer to the instructions provided when the script is installed as a task.
-     - After task scheduler installation, you should edit the following in the Windows task scheduler user interface:
+    IMPORTANT note on installation! 
+        There are two (!) ways of installing the script - Install and EasyInstall. 
+        Read carefully and select your preferred one.
+
+    Using the -EasyInstall option:
+        Using EasyInstall is the  recommended for inexperienced users. If you don't know how to create a new account on your windows machine and configure it to run 
+        as a service account, select EasyInstall! 
+        Please notice that selecting this, it makes the script run as SYSTEM which is a high privilege account and is not recommended for security reasons. 
+        It is STRONGLY RECOMMENDED to edit the scheduled task after a successful install and only allow it to run when located on your local WiFi/network:
+        Open Task Scheduler and select **Conditions/Network** 
+            - Check 'Start only if the following network connection is available' and select the network on which you want the script to run.
+
+    Using the Install option:
+        If using the -Install option, you should configure custom triggers in Task Scheduler (e.g., event-based triggers), as described here.
+        - After task scheduler installation, you should edit the following in the Windows task scheduler user interface:
         - **Security options:** Enable 'Run whether user is logged on or not'. This will ensure that the execution window runs hidden.
         - **Conditions/Network:** Check 'Start only if the following network connection is available' and select the network on which you want the script to run.
         - **Triggers:** Add an 'On an event' trigger (Log: System, Source: Power-Troubleshooter, Event ID: 1). Triggers on resume from sleep.
@@ -72,10 +83,16 @@
             </QueryList>
             ```
         - Add another custom XML trigger like above, but change `Data='false'` to `Data='true'`. Triggers when AC power is connected.
-    - Additional attributes passed via `-SensorAttributes` as JSON are included as key-value pairs in the sensor update payload.
-    - Parsing JSON to PowerShell scripts can be tricky. This format works when calling the script with -File (other formats might also work):
-      '[{"""battery_alert_disabled""" : true}, {"""device_class""" : """battery""" },{"""state_class""" : """measurement"""}]'
-    - The JSON format above does NOT work when calling the .ps1 directly!
+
+        
+    IMPORTANT note on adding JSON parameters on command line!
+        - Additional attributes can be passed via `-SensorAttributes` as JSON are included as key-value pairs in the sensor update payload.
+        - Parsing JSON to PowerShell scripts **can be tricky**
+          **This format works** when calling the script with -File (notice the single quotes encapsulating the JSON):
+                '[{"""battery_alert_disabled""" : true}, {"""device_class""" : """battery""" },{"""state_class""" : """measurement"""}]'
+          Other formats might work, but it is a pain to figure the correct syntax.
+        - The JSON format above does NOT work when calling the .ps1 directly! (like if you enter .\Send-LaptopBatteryStatus.ps1 from command line).
+        - You should use the -File option when calling the script with JSON parameters. Yes, I know I said it twice - But it is highly likely that it fails if you don't'...
 
 
 .REQUIREMENTS
@@ -111,7 +128,8 @@ param (
     [string]$HomeAssistantToken,         # Required: Home Assistant Access Token
     [string]$NetworkSSID,                # Optional: SSID for Wi-Fi validation
     [string]$SensorAttributes,           # Optional: Additional attributes for the sensor in JSON format (read .NOTES regarding parsing JSON to powershell!)
-    [switch]$Install                     # Optional: Installs the script as a scheduled task
+    [switch]$Install,                    # Optional: Installs the script as a scheduled task
+    [switch]$EasyInstall                 # Optional: Installs the script as a scheduled task using the full trigger via XML import
 )
 
 # Ensure HomeAssistantSensor is prefixed with "sensor."
@@ -250,9 +268,124 @@ function Install-ScheduledTask {
     }
 }
 
+function EasyInstall-ScheduledTask {
+    param (
+        [string]$ScriptPath
+    )
+
+    Write-Output "Starting scheduled task installation..."
+
+    # Task details
+    $TaskName = "Send Battery Data to Home Assistant"
+    $TaskDescription = "Send battery data to Home Assistant automatically."
+
+    # Ensure necessary privileges
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Write-Error "Administrator privileges are required to install the task."
+        return
+    }
+
+    # Define the PowerShell execution arguments
+    $SensorAttributes = $SensorAttributes.Replace('"','"""') # Escape double-quotes for JSON handling
+    $TaskArguments = "-WindowStyle hidden -File `"$ScriptPath`" -HomeAssistantURL `"$HomeAssistantURL`" -HomeAssistantSensor `"$HomeAssistantSensor`" -HomeAssistantToken `"$HomeAssistantToken`" -SensorAttributes `"$SensorAttributes`""
+
+    # Generate XML content dynamically for complex triggers
+    $TaskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>$TaskDescription</Description>
+    <URI>\$TaskName</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <!-- Runs the script every 5 minutes -->
+    <CalendarTrigger>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <Duration>P1D</Duration>
+        <StopAtDurationEnd>true</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>$(Get-Date -Format "yyyy-MM-ddT00:00:00")</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+    <!-- Runs on startup -->
+    <BootTrigger>
+      <Enabled>true</Enabled>
+    </BootTrigger>
+    <!-- Runs when waking from sleep -->
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
+    </EventTrigger>
+    <!-- Runs when AC power is disconnected -->
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[(EventID=105)]] and *[System[Provider[@Name="Microsoft-Windows-Kernel-Power"]]] and *[EventData[Data[@Name="AcOnline"] and (Data='false')]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
+    </EventTrigger>
+    <!-- Runs when AC power is reconnected -->
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[(EventID=105)]] and *[System[Provider[@Name="Microsoft-Windows-Kernel-Power"]]] and *[EventData[Data[@Name="AcOnline"] and (Data='true')]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
+    </EventTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>SYSTEM</UserId>
+      <LogonType>Password</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+   <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <Priority>7</Priority>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>true</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>$TaskArguments</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+
+    # Save the XML file temporarily - encoded as UTF16 Little Endian as schtasks only accepts this 
+    $TaskXmlPath = "$env:TEMP\BatteryTask.xml"
+    $TaskXml | Out-File -FilePath $TaskXmlPath -Encoding Unicode
+
+    try {
+        # Register the task using schtasks
+        schtasks /Create /TN "$TaskName" /XML "$TaskXmlPath" /F
+       
+        Write-Output "Scheduled task created successfully."
+        Write-Output "IMPORTANT: The script is now fully automated with event-based triggers."
+    } catch {
+        Write-Error "Failed to create the scheduled task: $_"
+    } finally {
+        # Cleanup the temporary XML file
+        Remove-Item -Path $TaskXmlPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 
 # Main Execution Logic
-if ($Install) {
+if ($EasyInstall) {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    EasyInstall-ScheduledTask -ScriptPath $scriptPath
+    return
+}
+elseif ($Install) {
     $scriptPath = $MyInvocation.MyCommand.Path
     Install-ScheduledTask -ScriptPath $scriptPath
     return
