@@ -53,7 +53,7 @@
 .NOTES
     Author: Torsten Juul-Jensen
     Created: January 8, 2025
-    Version: 1.5.0
+    Version: 1.5.1
     Version comment: EasyInstall option added. Uses temporary XML file to create a complete Scheduled Task with all triggers. 
 
     IMPORTANT note on installation! 
@@ -268,7 +268,7 @@ function Install-ScheduledTask {
     }
 }
 
-function EasyInstall-ScheduledTask {
+function Install-ScheduledTaskEasy {
     param (
         [string]$ScriptPath
     )
@@ -382,7 +382,7 @@ function EasyInstall-ScheduledTask {
 # Main Execution Logic
 if ($EasyInstall) {
     $scriptPath = $MyInvocation.MyCommand.Path
-    EasyInstall-ScheduledTask -ScriptPath $scriptPath
+    Install-ScheduledTaskEasy -ScriptPath $scriptPath
     return
 }
 elseif ($Install) {
