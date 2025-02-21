@@ -53,8 +53,8 @@
 .NOTES
     Author: Torsten Juul-Jensen
     Created: January 8, 2025
-    Version: 1.5.1
-    Version comment: EasyInstall option added. Uses temporary XML file to create a complete Scheduled Task with all triggers. 
+    Version: 1.5.2
+    Version comment: EasyInstall option added. Uses temporary XML file to create a complete Scheduled Task with all triggers. Header updated.
 
     IMPORTANT note on installation! 
         There are two (!) ways of installing the script - Install and EasyInstall. 
@@ -106,7 +106,8 @@
                 unique_id: "laptop_battery"
                 state: "{{ this.state }}"
                 device_class: battery
-                state_class: measurement 
+                state_class: measurement
+                unit_of_measurement: "%"
                 attributes:
                 status: "{{ this.attributes.status }}"
                 battery_state: "{{ this.attributes.battery_state }}"
