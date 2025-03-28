@@ -15,6 +15,10 @@
 #   Changed
 #   - Automation and script syntax updated (no functional changes)
 # 
+# 1.0.2 (2025-03-28)
+#   Added
+#   - Attribute 'availability' added as attribute on Hue Motion Sensor Hub Data
+#
 ################################################
 ## Explainer
 ################################################
@@ -254,6 +258,7 @@ command_line:
       name: Hue Motion Sensor Hub Data
       command: 'curl --insecure -X GET https://{{ states("input_text.hue_hub_ip") }}/api/{{ states("input_text.hue_hub_username") }}/sensors/ | jq -c ''to_entries[] | select(.value.name=="{{ states("sensor.hue_motion_sensor_device_name") }}") | {"device_id" : .key} + .value + {"sensitivity" : .value.config.sensitivity} + {"sensitivitymax" : .value.config.sensitivitymax}+ {"on" : .value.config.on}'''
       value_template: "{{ value_json.device_id }}"
+      availability: "{{ states('input_text.hue_hub_ip') not in ['unknown','unavailable', none] and states('sensor.hue_motion_sensor_device_name') not in ['unknown','unavailable', none]}}"
       scan_interval: 2592000 # 30 days
       json_attributes: 
         - device_id

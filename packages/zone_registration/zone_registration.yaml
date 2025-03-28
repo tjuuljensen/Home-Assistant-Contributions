@@ -24,6 +24,10 @@
 #   Added
 #   - Syntax in automations changed to new syntax style (actions and triggers)
 #
+# 0.3.2 (2025-03-28)
+#   Added
+#   - Attribute 'availability' added as attribute on Hue Motion Sensor Hub Data
+#
 ################################################
 ## Explainer
 ################################################
@@ -423,6 +427,7 @@ command_line:
   - sensor:
       name: Zone registration statistics
       command: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], month: .[0][0:7], year: .[0][0:4], days: length}) | group_by(.month) | map({month: .[0].month, date: (.[0].date[0:7] + \"-01\"), days: length, year: .[0].year})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], year: .[0][0:4], days: length}) | group_by(.year) | map({year: .[0].year, days: length}))}'  /config/www/csv/{{ states('sensor.zone_registration_filename') }}"
+      availability: "{{ states('sensor.zone_registration_filename') not in ['unknown','unavailable', none] }}"
       value_template: "{{ value_json.yearly[-1].days if value_json is defined else [] }}"
       scan_interval: 3600  # Update hourly
       json_attributes:
