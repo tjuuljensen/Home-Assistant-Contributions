@@ -43,6 +43,9 @@
 #   Changed
 #   - Minor changes to livetrack_update_livetrack script logic to handle livetrack end.
 #   
+# 2.1.1 (2025-04-27)
+#   Changed
+#   - Initial server value on first start changed to homeassistsnt.local.
 #
 ################################################
 ## Explainer
@@ -526,7 +529,7 @@ automation:
           sequence:
             - action: input_text.set_value
               data:
-                value: https://houseofjuuljensen.duckdns.org:8123/local/livetrack/empty_garmin.json 
+                value: https://homeassistant.local:8123/local/livetrack/empty_garmin.json 
               target:
                 entity_id: input_text.livetrack_local_json_path
         - conditions:
