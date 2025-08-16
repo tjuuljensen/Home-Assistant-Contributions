@@ -12,6 +12,7 @@
 !packages/battery_alert/
 !packages/copy_move_todo_list
 !packages/garmin_livetrack/
+!packages/garmin_livetrack/docs/
 !packages/hue_motion_sensor_sensitivity/
 !packages/pollen_denmark/
 !packages/pollen_denmark/images/
@@ -23,6 +24,7 @@
 !*.png
 !*.sh
 !*.ps1
+!*.drawio
 
 !LICENSE
 !.gitignore
