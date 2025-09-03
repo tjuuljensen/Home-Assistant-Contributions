@@ -17,6 +17,7 @@
 !packages/pollen_denmark/
 !packages/pollen_denmark/images/
 !packages/zone_registration/
+!lovelace/
 
 !*.yaml
 !*.md

@@ -23,7 +23,7 @@
 # 2.0.0 (2025-02-05)
 #   Changed
 #   - Major rewrite of Update Livetrack script to use new script syntax with actions, triggers, fields and selectors.
-#   - Resiliency improved by using input_text for querying RESt sensors.
+#   - Resiliency improved by using input_text for querying REST sensors.
 #   - Script now fully supports multiple simultaneous livetracks
 #   - State and attribute updates of Livetrack in progress changed for easier support for derived sensors (like your own binary_sensor.livetrack_our_own_name)
 #   - Livetrack dependent icons for Livetrack in progress was improved and made more transparent.

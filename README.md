@@ -115,7 +115,7 @@ Packages in Home Assistant let you bundle different aspects of your configuratio
 
 ### Package: Garmin Livetrack
 
-> **INPORTANT**: A major 2025 rewrite is in progress. I am testing continouosly and expected release is the end of February.
+> **IMPORTANT**: DOES NOT WORK in current form. A major 2025 rewrite is in progress since garmin rewrote their livetrack interface.
 
 > **What it’s for**: Integrates Garmin LiveTrack data into Home Assistant by monitoring LiveTrack emails, extracting session and trackpoint data, and updating sensors with real-time activity details.
 
