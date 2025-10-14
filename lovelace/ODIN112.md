@@ -47,32 +47,33 @@ Data hentes via RSS med feedparser (https://github.com/custom-components/feedpar
     ```
     type: markdown
     content: >-
-      {# 
-       # Configure the card like this:
-       # 
-       # title: Header. For display only. 
-       # station: The stations(s) to display. Multiple entries can be delimited with a pipe, ex.: 'Roskilde|Jyllinge'
-       # odin_entity: Feedparser entity. Expects default date formatting - '%Y-%m-%d %H:%M:%S%z' 
-       # remove_station: Remove station name from report text.
-       # hours_cutoff: How many hours to display.
-       #}
-      {% set title='Beredskab XYZ' %}
-      {% set station = 'XYZ' %} 
-      {% set odin_entity = 'sensor.odin_xyz_feed' %}
+     {# 
+      # Configure the card like this:
+      # 
+      # header: Title of page if string is not empty. 
+      # station [text|optionaltext]: The stations(s) to display. Multiple entries can be delimited with a pipe, ex.: 'Roskilde|Jyllinge'
+      # odin_entity [HA entity]: Feedparser entity. Expects default date formatting - '%Y-%m-%d %H:%M:%S%z' 
+      # remove_station [boolean]: Remove station name from report text.
+      # hours_cutoff [numeric]: How many hours to display.
+      #}
+      {% set header = '' %}
+      {% set station = 'Roskilde' %} 
+      {% set odin_entity = 'sensor.odin_roskilde_brandvaesen_feed' %}
       {% set remove_station = true %}
       {% set hours_cutoff = 24 %}
 
       {# Card logic #}
+      {% set title = header if header != '' else state_attr(odin_entity, 'entries')[0].title +": " + station %}
       {%- set entries = state_attr(odin_entity, 'entries') or [] %}  
       {% set date_limit = (now() - timedelta(hours=hours_cutoff)) | string %}  
       {% set filtered = entries
           | selectattr('published', 'gt', date_limit)
           | selectattr('summary', 'search', '(?i)('+station+')')
           | selectattr('summary', 'search', '(?i)(brand|redning|redn.|drukne|forurening|fuh|gas|fly)')
-          | list
+          | list | default([])
       %}
       ## {{ title }} 🚨
-      {% if (filtered) | length > 0 %}
+      {% if filtered | length > 0 %}
       <table>
       <thead>
       <tr>
@@ -82,7 +83,7 @@ Data hentes via RSS med feedparser (https://github.com/custom-components/feedpar
         </tr>
         </thead>
         <tbody>
-      {% endif %}
+
       {%- for e in filtered[:5] %}
       <tr> 
       <td>{{ (e.published | as_datetime).strftime('%a %H:%M')}}</td>
@@ -110,14 +111,17 @@ Data hentes via RSS med feedparser (https://github.com/custom-components/feedpar
       </td>
       <td>{{ iif(remove_station,e.summary.rsplit('Station:', 1)[0] | trim,e.summary).rsplit('Førstemelding:')[1] | trim }}</td>
       </tr>
+      {% endfor %}
+      </tbody></table>
       {% else %}
 
         _No events in the last {{hours_cutoff}} hours._
 
-      {% endfor %}
-      </tbody></table>
+      {% endif %}
 
       Source: [Beredskabsstyrelsen](http://www.odin.dk/112puls/ "ODIN - Online Dataregistrerings- og INdberetningssystem")
+
+
       ```
 
 ## Baggrund
