@@ -1,332 +1,510 @@
-# Controls charging of a device with a battery sensor getting "plugged in and out" using an attached power pplug.
-# device_charger_control_always_on.yaml
+# =============================================================================
+# Device Charger Control - Plugged In and Out
+# device_charger_control_plugged_in_and_out.yaml
 #
-## Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+# Controls charging of a device with a battery sensor, an attached power
+# plug/switch, and a presence/network tracker that indicates whether the device
+# is currently plugged in, online, or reachable.
 #
+# Author: Torsten Juul-Jensen <redacted>
 #
-################################################
-## Changelog
-################################################
+# Changelog:
+#   0.2.0 (2026-05-12)
+#     Changed:
+#       - Added queued execution with max 5.
+#       - Added Home Assistant startup reconciliation.
+#       - Changed battery thresholds to inclusive <= min and >= max.
+#       - Added optional notification actions.
+#       - Added switch, battery, and tracker unavailable handling.
+#       - Added tracker recovery handling.
+#       - Improved offline short-charge behavior.
+#       - Improved documentation and upgrade notes.
 #
-# 0.1.0 (2025-02-17)
-#   Added
-#   - Version 0.1.0 created
-
-################################################
-## Blueprint
-################################################
+#   0.1.0 (2025-02-17)
+#     Added:
+#       - Initial version.
+# =============================================================================
 
 blueprint:
   name: Device Charge Control - for devices getting plugged in and out
   domain: automation
-  author: Torsten Juul-Jensen
   description: |
     ## Device Charge Control - for devices getting plugged in and out
 
-    Batteries in phones, laptops and other electronic devices are best treated when charge percentage is not always forced to full charge.
-    This blueprint is made to keep your device of choice between two battery charge thresholds. 
-    There are multiple use cases:
+    Keeps a battery-powered device between two configurable charge thresholds by
+    controlling a smart plug or switch, with additional handling for devices that
+    are physically plugged in and unplugged.
 
-    - Always keep your laptop plugged in, but ensure what it starts charging when battery gets below 20% and stops when passing 80%.
+    This version is intended for laptops, phones, tablets, or similar devices that
+    may leave the charger and later reconnect.
 
-    - You have a tablet which is always plugged in when you don't use it.
-
-    - You charge your phone at night, but want to make sure that is is never over-charged.
-        
-    
     ### Requirements
-    
-    - a **battery sensor** with the battery level of the device you want to monitor. If you have a phone, the battery level sensor from the Home Assistant companion app will do it for you.
 
-    - a **device tracker** which shows whether the device with the battery it is online on your network.
+    - A battery sensor that reports the battery percentage.
+      Home Assistant Companion App battery sensors and externally updated sensors
+      from scripts are both suitable.
+    - A device tracker that indicates whether the device is currently online or
+      present on the network.
+    - A switch entity controlling the charger or power plug.
 
-    - a **switch** entity for a power plug of some sort (Shelly, Hue, Fibaro, ...).
+    ### Behavior
 
-    
-    ### Versions
+    The automation triggers when:
 
-    There are two versions of this blueprint. **This is the first version** - made for devices getting *plugged in and out*:
+    - Home Assistant starts.
+    - The battery sensor changes state.
+    - The device tracker changes to `home`.
+    - The device tracker changes to `not_home`.
+    - The device tracker changes to `unknown` or `unavailable`.
+    - The device tracker recovers from `unknown` or `unavailable`.
+    - The charger switch recovers from `unavailable` to `off`.
 
-    1. For devices that gets **plugged in and out** (normal phone and laptop behavior). 
+    The automation then:
 
-    2. For **always-on** devices (for example cameras with batteries, hidden devices) that are always connected to a power plug.
-    
+    - Starts charging when battery is **less than or equal to** the minimum threshold.
+    - Stops charging when battery is **greater than or equal to** the maximum threshold.
+    - Does nothing while battery is between the thresholds.
+    - Turns the charger on when the device comes online.
+    - Turns the charger on when the plug reconnects in `off` state.
+    - When the device goes offline:
+      - If battery is above the offline-charge threshold, the charger is turned off.
+      - If battery is at or below the offline-charge threshold, the charger is kept
+        on briefly, then turned off if the device is still offline.
+      - If battery is invalid, the charger is turned off if currently on, and an
+        optional notification is sent.
+    - When the tracker becomes `unknown` or `unavailable`, the automation notifies
+      if notification actions are configured and does not change the charger state.
+    - Does not make battery-threshold decisions when the battery sensor is
+      `unknown`, `unavailable`, or otherwise non-numeric.
+    - Does not call switch services while the switch is `unknown` or `unavailable`.
 
-    ### Automation logic explained
+    ### Resiliency notes
 
-    The automation will trigger on the following events:
+    - The automation uses `mode: queued` and `max: 5`, so short bursts of triggers
+      are processed in order instead of cancelling in-flight runs.
+    - Delayed offline charging re-checks the tracker and switch before turning the
+      charger off. If the device came back online during the delay, the charger is
+      not blindly turned off.
+    - Startup reconciliation means Home Assistant will correct the charger state
+      after a restart without waiting for the next battery update.
+    - Threshold comparisons are inclusive. A minimum of `20` starts charging at
+      `20%` and below. A maximum of `80` stops charging at `80%` and above.
+    - Optional notification actions can be used for abnormal conditions such as
+      invalid battery state, unavailable tracker state, or unavailable switch state.
 
-    - When the battery sensor gets updated (battery sensor)
+    ### Upgrade notes from older versions
 
-    - When the device goes offline (device tracker)
+    Existing automations created from an older version should be opened and saved
+    once after updating the blueprint so Home Assistant can apply new optional
+    inputs and defaults.
 
-    - When the device comes online (device tracker)
+    Important behavior changes:
 
-    - When the power plug changes state from unavailable to off (switch)
+    - Run mode changed from `restart` to `queued`.
+    - Battery threshold handling changed from strict `below`/`above` to inclusive
+      `<= minimum` and `>= maximum`.
+    - Home Assistant startup now re-evaluates the current state.
+    - Invalid battery states no longer globally block plug-reconnect or online
+      recovery behavior.
+    - Tracker `unknown`/`unavailable` states are now handled explicitly.
+    - Delayed offline charging now re-checks that the device is still offline before
+      turning the charger off.
+    - Switch `unknown`/`unavailable` states are now detected before service calls.
+    - Optional notification actions were added.
 
+    Example notification action:
 
-    Based on the states of the monitored entities the automation will perform the following actions:
+    ```yaml
+    - action: persistent_notification.create
+      data:
+        title: "{{ notification_title }}"
+        message: "{{ notification_message }}"
+    ```
 
-    - When battery level is within the threshold values --> do nothing.
+    ### Example use cases
 
-    - When battery level is below the minimum threshold value --> start charging.
+    - Keep a laptop between 20% and 80% while it is docked.
+    - Give a device a short safety charge before shutting off the plug when it
+      disappears from the network.
+    - Recover safely after router, smart plug, Zigbee, Z-Wave, Wi-Fi, or Home
+      Assistant restarts.
 
-    - When battery level is above the maxmimum threshold value --> stop charging.
+    ### Related version
 
-    - When device tracker goes offline --> if below configured threshold value --> start short charging (else) ==> stop charging if power is on.
-
-    - When device tracker comes online --> --> start charging.
-
-    - When power plug is reconnected in state off --> start charging.
-
-
-    The two latter actions are safety measures, to avoid a potential situation with a non-powered device with a critical low battery.
-
+    A separate blueprint is available for devices that are always connected to the
+    same charger.
 
     ### Useful links
 
-    - [PowerShell script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/Send-LaptopBatteryStatus.ps1) to send battery state information from a Windows computer to Home Assistant.
+    - [PowerShell script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/Send-LaptopBatteryStatus.ps1)
+    to send battery state information from a Windows computer to Home Assistant.
 
-    - [Bash script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/send_laptop_battery_status.sh) to send battery state information from a Linux computer to Home Assistant.
-    
-    - [Another version](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/device_charger_control_always_on.yaml) of this blueprint - for **always on** devices.
+    - [Bash script](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/scripts/send_laptop_battery_status.sh)
+    to send battery state information from a Linux computer to Home Assistant.
+
+    - [Another version](https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/device_charger_control_always_on.yaml)
+    of this blueprint - for **always on** devices.
 
 
     ## Blueprint configuration
 
     Please select your battery sensor, your device tracker and your switch below:
+
   input:
     battery_sensor:
       name: Battery Sensor
-      description: The name of the entity holding the charge percent of the device with the battery that is being controlled by this blueprint
+      description: Battery percentage sensor for the device being protected.
       selector:
         entity:
           filter:
-            device_class: battery
-            domain: sensor
+            - device_class:
+                - battery
+              domain:
+                - sensor
+          multiple: false
+
     network_device_tracker:
       name: Network Device Tracker
-      description: The name of a device tracker which monitors the device with the battery entity (for example a specific laptop device tracker)
+      description: Device tracker for the device with the battery sensor.
       selector:
         entity:
           filter:
-            domain: device_tracker
+            - domain:
+                - device_tracker
+          multiple: false
+
     power_switch:
       name: Device Power Switch
-      description: he switch that controls the power delivery (like a shelly or Hue plug or similar).
+      description: The switch that controls charger power delivery, such as a smart plug.
       selector:
         entity:
           filter:
-            domain: switch
+            - domain:
+                - switch
+          multiple: false
+
     threshold_configuration:
       name: Threshold configuration
       icon: mdi:battery-medium
-      description: The thresholds used to control the charging
+      description: Battery thresholds used to control normal charging.
       input:
         battery_charge_min:
-          name: Start charging when battery percentage falls below
+          name: Start charging when battery percentage is at or below
           selector:
             number:
-              min: 1
-              max: 49
-              step: 1
+              min: 1.0
+              max: 49.0
+              step: 1.0
               mode: slider
-              unit_of_measurement: '%'
+              unit_of_measurement: "%"
           default: 20
+
         battery_charge_max:
-          name: Stop charging when battery percentage is above
+          name: Stop charging when battery percentage is at or above
           selector:
             number:
-              min: 50
-              max: 100
-              step: 1
+              min: 50.0
+              max: 100.0
+              step: 1.0
               mode: slider
-              unit_of_measurement: '%'
+              unit_of_measurement: "%"
           default: 80
-    other_options:
-      name: Other options
+
+    offline_options:
+      name: Offline charging options
       icon: mdi:battery-clock-outline
       collapsed: true
-      description: Optional configuration for safety charging when going offline
+      description: Optional safety charging behavior when the device goes offline.
       input:
         charge_when_offline_state_below:
-          name: Charge when going offline and battery state is below battery percentage
+          name: Short-charge when going offline and battery percentage is at or below
           selector:
             number:
-              min: 1
-              max: 75
-              step: 1
+              min: 1.0
+              max: 75.0
+              step: 1.0
               mode: slider
-              unit_of_measurement: '%'
+              unit_of_measurement: "%"
           default: 40
+
         chargetime_when_going_offline:
-          name: Time to charge when going offline
+          name: Short-charge duration when going offline
           selector:
             number:
-              min: 0
-              max: 30
-              step: 1
+              min: 0.0
+              max: 30.0
+              step: 1.0
               mode: slider
-              unit_of_measurement: 'minutes'
+              unit_of_measurement: minutes
           default: 15
+
+    notification_options:
+      name: Notification options
+      icon: mdi:bell-outline
+      collapsed: true
+      description: Optional actions to run when the automation detects an abnormal condition.
+      input:
+        notification_actions:
+          name: Notification actions
+          description: >
+            Optional actions for abnormal states. These actions can use the variables
+            `notification_title` and `notification_message`.
+          default: []
+          selector:
+            action: {}
+
+  source_url: https://raw.githubusercontent.com/tjuuljensen/Home-Assistant-Contributions/refs/heads/main/blueprints/device_charge_control/device_charger_control_plugged_in_and_out.yaml
+
 triggers:
-  - alias: When battery sensor is updated
+  - alias: Reconcile charger state when Home Assistant starts
+    trigger: homeassistant
+    event: start
+    id: ha_started
+
+  - alias: Reconcile charger state when battery sensor changes
     trigger: state
     entity_id: !input battery_sensor
+    for:
+      seconds: 10
     id: battery_state_change
-  - trigger: state
+
+  - alias: Device tracker reports device offline
+    trigger: state
     entity_id: !input network_device_tracker
     to: not_home
     for:
       seconds: 5
     id: device_went_offline
-    alias: When device goes offline
-  - trigger: state
+
+  - alias: Device tracker reports device online
+    trigger: state
     entity_id: !input network_device_tracker
     to: home
     for:
       seconds: 3
-    alias: When Device Tracker comes online for 3 seconds
     id: device_came_online
-  - trigger: state
+
+  - alias: Device tracker became unavailable
+    trigger: state
+    entity_id: !input network_device_tracker
+    to:
+      - unknown
+      - unavailable
+    for:
+      minutes: 2
+    id: tracker_unavailable
+
+  - alias: Device tracker recovered from unavailable
+    trigger: state
+    entity_id: !input network_device_tracker
+    from:
+      - unknown
+      - unavailable
+    id: tracker_recovered
+
+  - alias: Recover charging if the plug reconnects in off state
+    trigger: state
     entity_id: !input power_switch
     from: unavailable
-    to: 'off'
+    to: "off"
     id: plug_reconnects_in_state_off
+
 actions:
+  - variables:
+      battery_entity: !input battery_sensor
+      tracker_entity: !input network_device_tracker
+      switch_entity: !input power_switch
+      battery_charge_min: !input battery_charge_min
+      battery_charge_max: !input battery_charge_max
+      charge_when_offline_state_below: !input charge_when_offline_state_below
+      chargetime_when_going_offline: !input chargetime_when_going_offline
+      battery_level: "{{ states(battery_entity) | float(none) }}"
+      battery_valid: "{{ battery_level is number }}"
+      tracker_state: "{{ states(tracker_entity) }}"
+      tracker_available: "{{ tracker_state not in ['unknown', 'unavailable', 'none'] }}"
+      switch_state: "{{ states(switch_entity) }}"
+      switch_available: "{{ switch_state not in ['unknown', 'unavailable', 'none'] }}"
+
   - choose:
-    - conditions:
-      - alias: 'Battery state is unknown or unavailable'
-        condition: or
+      - alias: Switch is unavailable; do not call switch services
         conditions:
-        - condition: state
-          entity_id: !input battery_sensor
-          state: unavailable
-          alias: If battery sensor state is unavailable
-        - condition: state
-          entity_id: !input battery_sensor
-          state: unknown
-          alias: If battery sensor state is unknown
-      sequence:
-        - stop: 'No action required as battery is unknown or unavailable'
-    - conditions:
-      - alias: Laptop battery is within threshold limits
-        condition: numeric_state
-        entity_id: !input battery_sensor
-        below: !input battery_charge_max
-        above: !input battery_charge_min
-      - condition: trigger
-        id: battery_state_change
-      sequence:
-      - stop: 'No action required as battery is within threshold limits'
-    - conditions:
-      - alias: Laptop battery is below threshold limit
-        condition: numeric_state
-        entity_id: !input battery_sensor
-        below: !input battery_charge_min
-      - condition: trigger
-        id: battery_state_change
-      sequence:
-      - if:
-        - condition: state
-          entity_id: !input power_switch
-          state: 'off'
-        then:
-        - action: switch.turn_on
-          metadata: {}
-          data: {}
-          target:
-            entity_id: !input power_switch
-    - conditions:
-      - alias: Laptop battery is above threshold limit
-        condition: numeric_state
-        entity_id: !input battery_sensor
-        above: !input battery_charge_max
-      - condition: trigger
-        id: battery_state_change
-      sequence:
-      - if:
-        - condition: state
-          entity_id: !input power_switch
-          state: 'on'
-        then:
-        - action: switch.turn_off
-          metadata: {}
-          data: {}
-          target:
-            entity_id: !input power_switch
-    - conditions:
-      - condition: trigger
-        id: device_went_offline
-      sequence:
-      - choose:
-        - conditions:
-          - condition: numeric_state
-            above: !input charge_when_offline_state_below
-            entity_id: !input battery_sensor
-            alias: If battery is above variable charge_when_offline_state_below
-          - condition: state
-            entity_id: !input power_switch
-            state: 'on'
-          sequence:
-          - action: switch.turn_off
-            metadata: {}
-            data: {}
+          - condition: template
+            value_template: "{{ not switch_available }}"
+        sequence:
+          - variables:
+              notification_title: "Device charger switch unavailable"
+              notification_message: >-
+                {{ switch_entity }} is {{ switch_state }}. Charger control was skipped.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input notification_actions
+          - stop: Charger switch is unavailable or unknown.
+
+      - alias: Tracker is unavailable; notify only and keep charger state unchanged
+        conditions:
+          - condition: trigger
+            id: tracker_unavailable
+        sequence:
+          - variables:
+              notification_title: "Device tracker unavailable"
+              notification_message: >-
+                {{ tracker_entity }} has been {{ tracker_state }} for at least 2 minutes.
+                Charger state was left unchanged.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input notification_actions
+          - stop: Tracker is unavailable or unknown.
+
+      - alias: Battery sensor is invalid on a battery/startup reconciliation trigger
+        conditions:
+          - condition: template
+            value_template: "{{ trigger.id in ['battery_state_change', 'ha_started'] }}"
+          - condition: template
+            value_template: "{{ not battery_valid }}"
+        sequence:
+          - variables:
+              notification_title: "Device battery sensor unavailable"
+              notification_message: >-
+                {{ battery_entity }} is {{ states(battery_entity) }}. Battery-threshold
+                charging decision was skipped.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input notification_actions
+          - stop: Battery state is not numeric.
+
+      - alias: Charger plug reconnected in off state; turn charger on defensively
+        conditions:
+          - condition: trigger
+            id: plug_reconnects_in_state_off
+        sequence:
+          - action: switch.turn_on
             target:
               entity_id: !input power_switch
-        - conditions:
-          - alias: If battery is below or equal to variable charge_when_offline_state_below.
-            condition: numeric_state
-            entity_id: !input battery_sensor
-            below: !input charge_when_offline_state_below
-          sequence:
-          - alias: Do a short charge period before turning off as battery is less than variable charge_when_offline_state_below.
-            if:
-            - condition: state
+
+      - alias: Device came online; turn charger on defensively
+        conditions:
+          - condition: trigger
+            id:
+              - device_came_online
+              - tracker_recovered
+          - condition: template
+            value_template: "{{ tracker_state == 'home' }}"
+          - condition: template
+            value_template: "{{ switch_state == 'off' }}"
+        sequence:
+          - action: switch.turn_on
+            target:
               entity_id: !input power_switch
-              state: 'on'
+
+      - alias: Device went offline with invalid battery state; turn charger off if it is on
+        conditions:
+          - condition: trigger
+            id:
+              - device_went_offline
+              - tracker_recovered
+          - condition: template
+            value_template: "{{ tracker_state == 'not_home' }}"
+          - condition: template
+            value_template: "{{ not battery_valid }}"
+        sequence:
+          - variables:
+              notification_title: "Device went offline with invalid battery state"
+              notification_message: >-
+                {{ tracker_entity }} is not_home, but {{ battery_entity }} is
+                {{ states(battery_entity) }}. Short-charge decision was skipped.
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ true }}"
+                sequence: !input notification_actions
+          - if:
+              - condition: template
+                value_template: "{{ switch_state == 'on' }}"
             then:
-            - delay:
-                minutes: !input chargetime_when_going_offline
-            - action: switch.turn_off
-              metadata: {}
-              data: {}
-              target:
-                entity_id: !input power_switch
-            else:
-            - action: switch.turn_on
-              metadata: {}
-              data: {}
-              target:
-                entity_id: !input power_switch
-            - delay:
-                minutes: !input chargetime_when_going_offline
-            - action: switch.turn_off
-              metadata: {}
-              data: {}
-              target:
-                entity_id: !input power_switch
-    - conditions:
-      - condition: trigger
-        id: plug_reconnects_in_state_off
-      sequence:
-      - action: switch.turn_on
-        metadata: {}
-        data: {}
-        target:
-          entity_id: !input power_switch
-      alias: Resume charging if device charging plug reconnects
-    - conditions:
-        - condition: trigger
-          id: device_came_online
-        - condition: state
-          entity_id: !input power_switch
-          state: 'off'
-      sequence:
-        - alias: Always resume charging when coming online
-          action: switch.turn_on
-          metadata: {}
-          data: {}
-          target:
-            entity_id: !input power_switch
-mode: restart
+              - action: switch.turn_off
+                target:
+                  entity_id: !input power_switch
+
+      - alias: Device went offline and battery is above offline-charge threshold; turn charger off
+        conditions:
+          - condition: trigger
+            id:
+              - device_went_offline
+              - tracker_recovered
+          - condition: template
+            value_template: "{{ tracker_state == 'not_home' }}"
+          - condition: template
+            value_template: >-
+              {{ battery_valid and battery_level > (charge_when_offline_state_below | float) }}
+          - condition: template
+            value_template: "{{ switch_state == 'on' }}"
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input power_switch
+
+      - alias: Device went offline and battery is at or below offline-charge threshold; short-charge
+        conditions:
+          - condition: trigger
+            id:
+              - device_went_offline
+              - tracker_recovered
+          - condition: template
+            value_template: "{{ tracker_state == 'not_home' }}"
+          - condition: template
+            value_template: >-
+              {{ battery_valid and battery_level <= (charge_when_offline_state_below | float) }}
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ states(switch_entity) == 'off' }}"
+            then:
+              - action: switch.turn_on
+                target:
+                  entity_id: !input power_switch
+          - delay:
+              minutes: !input chargetime_when_going_offline
+          - if:
+              - condition: template
+                value_template: "{{ states(tracker_entity) in ['not_home', 'unknown', 'unavailable'] }}"
+              - condition: template
+                value_template: "{{ states(switch_entity) == 'on' }}"
+            then:
+              - action: switch.turn_off
+                target:
+                  entity_id: !input power_switch
+
+      - alias: Battery is at or below the minimum threshold; start charging
+        conditions:
+          - condition: template
+            value_template: "{{ trigger.id in ['battery_state_change', 'ha_started'] }}"
+          - condition: template
+            value_template: "{{ battery_valid and battery_level <= (battery_charge_min | float) }}"
+          - condition: template
+            value_template: "{{ switch_state == 'off' }}"
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input power_switch
+
+      - alias: Battery is at or above the maximum threshold; stop charging
+        conditions:
+          - condition: template
+            value_template: "{{ trigger.id in ['battery_state_change', 'ha_started'] }}"
+          - condition: template
+            value_template: "{{ battery_valid and battery_level >= (battery_charge_max | float) }}"
+          - condition: template
+            value_template: "{{ switch_state == 'on' }}"
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input power_switch
+
+mode: queued
+max: 5
