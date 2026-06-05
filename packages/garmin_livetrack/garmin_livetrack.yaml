@@ -2,28 +2,24 @@
 # garmin_livetrack.yaml
 # Originally inspiration source: https://community.home-assistant.io/t/garmin-livetrack-tracking-package/552793
 #
-# Author: Torsten Juul-Jensen [tjuuljensen at gmail.com]
+# Author: package maintainer
 #
 ################################################
 ## Changelog
 ################################################
 #
-# 1.0.0 (2023-09-12)
-#   Added
-#   - Version 1.0.0 defined
+# 2.1.1 (2025-04-27)
+#   Changed
+#   - Initial server value on first start changed to homeassistant.local.
 # 
-# 1.0.1 (2024-03-20)
-#   Added
-#   - Missing script added to file
-# 
-# 1.1.0 (2024-04-09)
-#   Added
-#   - json file name corrected
+# 2.1.0 (2025-03-28)
+#   Changed
+#   - Minor changes to livetrack_update_livetrack script logic to handle livetrack end.
 #
 # 2.0.0 (2025-02-05)
 #   Changed
 #   - Major rewrite of Update Livetrack script to use new script syntax with actions, triggers, fields and selectors.
-#   - Resiliency improved by using input_text for querying REST sensors.
+#   - Resiliency improved by using input_text for querying RESt sensors.
 #   - Script now fully supports multiple simultaneous livetracks
 #   - State and attribute updates of Livetrack in progress changed for easier support for derived sensors (like your own binary_sensor.livetrack_our_own_name)
 #   - Livetrack dependent icons for Livetrack in progress was improved and made more transparent.
@@ -38,14 +34,18 @@
 #   Known Issues
 #   - If Strict User control is enabled an a longer list of users are monitored, the json stored in an input text field will become too long resulting in new users not beind added.
 #     This will reveal itself in input_text.livetrack_users having the json value {"err": 255 }
+# 
+# 1.1.0 (2024-04-09)
+#   Added
+#   - json file name corrected
 #
-# 2.1.0 (2025-03-28)
-#   Changed
-#   - Minor changes to livetrack_update_livetrack script logic to handle livetrack end.
-#   
-# 2.1.1 (2025-04-27)
-#   Changed
-#   - Initial server value on first start changed to homeassistsnt.local.
+# 1.0.1 (2024-03-20)
+#   Added
+#   - Missing script added to file
+#
+# 1.0.0 (2023-09-12)
+#   Added
+#   - Version 1.0.0 defined
 #
 ################################################
 ## Explainer
@@ -66,7 +66,7 @@
 #    (https://support.garmin.com/en-MY/?faq=MuhyRLLZYk2GAaiVlVIZ6A).
 # 3. An IMAP sensor in HA, which monitors the mailbox receiving the livetrack email from Garmin (https://www.home-assistant.io/integrations/imap).
 #    IMPORTANT! When configuring the IMAP sensor, make sure to tick the "Body text" box and add this template to "Template to create custom event data":
-#       {{ ( text | regex_findall(find='https://livetrack.[^\>"]+', ignorecase=True))[0] | replace('=','') }}
+#       {{ ( text | regex_findall(find='https://livetrack.[^\>"]+', ignorecase=True))[0] | regex_replace(find='=\r?\n', replace='') }}
 #    You can safely leave the Max message size to 2048,as the template above will search the full body text.
 # 
 #
@@ -108,7 +108,7 @@
 # for your own requirement. Please pay ATTENTION to the attribute garmin_user, which you will have to change into the monitored user's Display name.
 #
 # - binary_sensor:
-#     - name: "Livetrack Teejay"  # <=== Your own sensor name
+#     - name: "Livetrack Example User"  # <=== Your own sensor name
 #        state: >
 #         {%- set livetrack_sensor = "binary_sensor.livetrack_in_progress" %}
 #         {%- set garmin_user = this.attributes.garmin_user %}
@@ -137,7 +137,7 @@
 #           mdi:run
 #         {% endif %}
 #       attributes:
-#         garmin_user: Teejay # <=== Garmin display name of the Livetracked user.
+#         garmin_user: Example User # <=== Garmin display name of the Livetracked user.
 #         livetrack_sensor: binary_sensor.livetrack_in_progress
 #         last_updated: "{{ state_attr(this.attributes.livetrack_sensor,'last_updated') if is_state_attr(this.attributes.livetrack_sensor,'garmin_user',this.attributes.garmin_user) else this.attributes.last_updated }}"
 #         start:     "{{ state_attr(this.attributes.livetrack_sensor,'start') if not is_state_attr('binary_sensor.livetrack_in_progress','start','') and is_state_attr(this.attributes.livetrack_sensor,'garmin_user',this.attributes.garmin_user) else this.attributes.start }}"
@@ -242,7 +242,7 @@ input_text:
     icon: mdi:link
 
 
-  # Change the following URL to match your local path of the json file 
+  # Legacy fallback helper retained for backward compatibility (GraphQL path does not use it)
   livetrack_local_json_path:
     name: Livetrack Local JSON path
     max: 250
@@ -284,47 +284,37 @@ input_select:
 
 
 ################################################
-## RESTful
+## Command line fetcher
 ################################################
 
-sensor:
 
-  - platform: rest
-    resource_template: "{{ state_attr('sensor.livetrack_active_id','livetrack_data_url') if state_attr('sensor.livetrack_active_id','livetrack_data_url') != None else states('input_text.livetrack_local_json_path') }}"
-    name: LiveTrack TrackPoints
-    icon: mdi:map-marker-right-outline
-    value_template: "{{ state_attr('sensor.livetrack_active_id','session') }}"
-    scan_interval: 2592000 #30d
-    timeout: 10
-    headers:
-      Content-Type: application/json
-    json_attributes_path: "$.trackPoints[-1:]"
-    json_attributes: 
-    - dateTime
-    - position
-    - fixType
-    - altitude
-    - fitnessPointData
-    - speed
+command_line:
 
-
-  - platform: rest
-    resource_template: "{{ state_attr('sensor.livetrack_active_id','livetrack_session_url') if state_attr('sensor.livetrack_active_id','livetrack_session_url') != None else states('input_text.livetrack_local_json_path') }}"
-    name: LiveTrack Session
-    icon: mdi:map-marker-circle
-    value_template: "{{ state_attr('sensor.livetrack_active_id','session') }}"
-    scan_interval: 2592000 #30d
-    timeout: 10
-    headers:
-      Content-Type: application/json
-    json_attributes_path: "$.session"
-    json_attributes: 
-    - start
-    - end
-    - userDisplayName
-    - viewable
-    - sessionName
-    - sessionId
+  - sensor:
+      name: "LiveTrack Data"
+      unique_id: livetrack_data
+      icon: mdi:cloud-download-outline
+      command: >-
+        python3 /config/utils/garmin-livetrack-fetch.py
+        --url {{ states('sensor.livetrack_active_id') | to_json }}
+        --timeout 20
+      scan_interval: 2592000  #30 d (we update it manually in automation)
+      command_timeout: 30
+      value_template: >-
+        {{ value_json.session.sessionId
+           if value_json is mapping
+           and value_json.session is mapping
+           and value_json.session.sessionId is defined
+           else 'unknown' }}
+      json_attributes:
+        - ok
+        - session
+        - lastTrackPoint
+        - legacyLastTrackPoint
+        - trackpoint_count
+        - errors
+        - fetched_at
+        - source
 
 
 ################################################
@@ -333,6 +323,7 @@ sensor:
 
 shell_command:
 
+  # Legacy helper retained for backward compatibility with earlier REST-JSON workflow
   create_empty_garmin_json_file: 'TESTDIR=/config/www/livetrack; [[ -d $(dirname ${TESTDIR}) ]] && [[ ! -d ${TESTDIR} ]] && mkdir -p ${TESTDIR} ; echo ''{"trackPoints":[]}'' > $TESTDIR/empty_garmin.json'
 
 
@@ -353,6 +344,69 @@ template:
       attributes:
         json: >
           {{ states('input_text.livetrack_users').replace('\'','"') | from_json }}
+
+
+  # Public LiveTrack data sensors retained from the legacy Garmin GraphQL workflow
+- sensor:
+    - name: "LiveTrack TrackPoints"
+      icon: mdi:map-marker-right-outline
+      unique_id: livetrack_trackpoints
+      state: >-
+        {% set session = state_attr('sensor.livetrack_data', 'session') %}
+        {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+        {{ session.sessionId
+           if session is mapping
+           and point is mapping
+           and point | length > 0
+           and session.sessionId is defined
+           else none }}
+      attributes:
+        dateTime: >-
+          {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+          {{ point.dateTime if point is mapping and point.dateTime is defined else none }}
+        position: >-
+          {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+          {{ point.position if point is mapping and point.position is defined else none }}
+        altitude: >-
+          {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+          {{ point.altitude if point is mapping and point.altitude is defined else none }}
+        fitnessPointData: >-
+          {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+          {{ point.fitnessPointData if point is mapping and point.fitnessPointData is defined else none }}
+        speed: >-
+          {% set point = state_attr('sensor.livetrack_data', 'legacyLastTrackPoint') %}
+          {{ point.speed if point is mapping and point.speed is defined else none }}
+        trackpoint_count: "{{ state_attr('sensor.livetrack_data', 'trackpoint_count') }}"
+        fetched_at: "{{ state_attr('sensor.livetrack_data', 'fetched_at') }}"
+
+    - name: "LiveTrack Session"
+      unique_id: livetrack_session
+      icon: mdi:map-marker-circle
+      state: >-
+        {% set session = state_attr('sensor.livetrack_data', 'session') %}
+        {{ session.sessionId
+           if session is mapping and session.sessionId is defined
+           else none }}
+      attributes:
+        start: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.start if session is mapping and session.start is defined else none }}
+        end: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.end if session is mapping and session.end is defined else none }}
+        sessionId: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.sessionId if session is mapping and session.sessionId is defined else none }}
+        userDisplayName: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.userDisplayName if session is mapping and session.userDisplayName is defined else none }}
+        viewable: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.viewable if session is mapping and session.viewable is defined else none }}
+        sessionName: >-
+          {% set session = state_attr('sensor.livetrack_data', 'session') %}
+          {{ session.sessionName if session is mapping and session.sessionName is defined else none }}
+        fetched_at: "{{ state_attr('sensor.livetrack_data', 'fetched_at') }}"
 
 
   # Sensor to get link from email with integration: https://www.home-assistant.io/integrations/imap
@@ -422,7 +476,14 @@ template:
         {{- trigger.to_state.state | replace('.com/session/','.com/services/session/') | replace('token','sessionToken') -}}  
         {%- endif -%}
       session: >-
-        {{ trigger.to_state.state |regex_replace(find='.*/session/', replace='', ignorecase=True) |regex_replace(find='/.*', replace='', ignorecase=True) -}}
+        {%- set url = trigger.to_state.state | regex_replace(find='=\r?\n|\r?\n', replace='') -%}
+        {%- set sessions = url | regex_findall(find='/session/([^/?#&]+)', ignorecase=True) -%}
+        {{ sessions[0] if sessions | count else '' }}
+      token: >-
+        {%- set url = trigger.to_state.state | regex_replace(find='=\r?\n|\r?\n', replace='') -%}
+        {%- set path_tokens = url | regex_findall(find='/token/([^/?#&]+)', ignorecase=True) -%}
+        {%- set query_tokens = url | regex_findall(find='[?&]token=([^/?#&]+)', ignorecase=True) -%}
+        {{ path_tokens[0] if path_tokens | count else query_tokens[0] if query_tokens | count else '' }}
 
 
 - binary_sensor:
@@ -466,8 +527,8 @@ template:
     attributes:
       last_updated: "{{this.last_updated}}"
       garmin_user: "{{ state_attr('sensor.livetrack_session','userDisplayName') if state_attr('sensor.livetrack_session', 'userDisplayName') is not none }}"
-      start: "{{ state_attr('sensor.livetrack_session', 'start')  | as_datetime | as_local if state_attr('sensor.livetrack_session', 'start') is defined and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
-      end: "{{ state_attr('sensor.livetrack_session', 'end') | as_datetime | as_local if state_attr('sensor.livetrack_session', 'end') is defined and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      start: "{% set start = state_attr('sensor.livetrack_session', 'start') %}{{ start | as_datetime | as_local if start is not none and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
+      end: "{% set end = state_attr('sensor.livetrack_session', 'end') %}{{ end | as_datetime | as_local if end is not none and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
       latitude: "{{ state_attr('sensor.livetrack_trackpoints', 'position')['lat'] if state_attr('sensor.livetrack_trackpoints', 'position')['lat'] is not none and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
       longitude: "{{ state_attr('sensor.livetrack_trackpoints', 'position')['lon'] if state_attr('sensor.livetrack_trackpoints', 'position')['lon'] is not none and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
       datetime: "{{ state_attr('sensor.livetrack_trackpoints', 'dateTime') if state_attr('sensor.livetrack_trackpoints', 'dateTime') is not none and states('sensor.livetrack_session') == states('sensor.livetrack_trackpoints') }}"
@@ -505,6 +566,128 @@ template:
 automation:
 
 
+- alias: 'LiveTrack: Start Livetrack Updates'
+  id: "livetrack_start_livetrack_updates"
+  description: >-
+    Starts LiveTrack polling for new LiveTrack URLs and resumes polling after
+    Home Assistant restart when a restored active session is still valid.
+  triggers:
+    - trigger: state
+      entity_id: sensor.livetrack_id
+      id: livetrack_id_change
+      not_from:
+        - unavailable
+        - unknown
+    - trigger: homeassistant
+      event: start
+      id: start
+  conditions:
+    - condition: or
+      conditions:
+        - condition: and
+          conditions:
+            - condition: trigger
+              id:
+                - livetrack_id_change
+            - condition: template
+              value_template: >-
+                {{ trigger.to_state.state is defined and trigger.to_state.state != '' }}
+        - condition: trigger
+          id:
+            - start
+  actions:
+    - choose:
+        - conditions:
+            - condition: trigger
+              id:
+                - livetrack_id_change
+          sequence:
+            - action: script.turn_on
+              target:
+                entity_id: script.livetrack_update_livetrack
+              data:
+                variables:
+                  url: "{{ trigger.to_state.state }}"
+                  notifier: >-
+                    {% if is_state('input_boolean.livetrack_notifications','on')
+                       and 'notify.' in states('input_text.livetrack_notifier_name') %}
+                      {{ states('input_text.livetrack_notifier_name') }}
+                    {% else %}
+                      {{ none }}
+                    {% endif %}
+                  ios_message_style: >-
+                    {{ is_state('input_boolean.livetrack_ios_message_style','on') }}
+        - conditions:
+            - condition: trigger
+              id:
+                - start
+          sequence:
+            - alias: Wait for restored LiveTrack active URL
+              wait_template: >-
+                {{ "livetrack.garmin.com" in states('input_text.livetrack_active_url')
+                   or "livetrack.garmin.com" in states('sensor.livetrack_id') }}
+              continue_on_timeout: false
+              timeout: "00:02:00"
+            - variables:
+                restart_livetrack_url: >-
+                  {% if "livetrack.garmin.com" in states('input_text.livetrack_active_url') %}
+                    {{ states('input_text.livetrack_active_url') }}
+                  {% elif "livetrack.garmin.com" in states('sensor.livetrack_id') %}
+                    {{ states('sensor.livetrack_id') }}
+                  {% else %}
+                    {{ none }}
+                  {% endif %}
+                restart_livetrack_session: >-
+                  {%- set clean_url = restart_livetrack_url | regex_replace(find='=\r?\n|\r?\n', replace='') -%}
+                  {%- set sessions = clean_url | regex_findall(find='/session/([^/?#&]+)', ignorecase=True) -%}
+                  {{ sessions[0] if sessions | count else '' }}
+            - action: input_text.set_value
+              target:
+                entity_id: input_text.livetrack_active_url
+              data:
+                value: "{{ restart_livetrack_url }}"
+            - alias: Wait for restored active URL to be parsed
+              wait_template: >-
+                {{ states('sensor.livetrack_active_id') == restart_livetrack_url
+                   and state_attr('sensor.livetrack_active_id','session') == restart_livetrack_session
+                   and state_attr('sensor.livetrack_active_id','token') not in [none, ''] }}
+              continue_on_timeout: false
+              timeout: "00:02:00"
+            - alias: Refresh restored LiveTrack data
+              action: homeassistant.update_entity
+              target:
+                entity_id: sensor.livetrack_data
+            - alias: Wait for restored LiveTrack session data
+              wait_template: >-
+                {{ states('sensor.livetrack_session') == restart_livetrack_session
+                   and state_attr('sensor.livetrack_session','end') not in [none, ''] }}
+              continue_on_timeout: false
+              timeout: "00:01:00"
+            - if:
+                - alias: If livetrack end is after now
+                  condition: template
+                  value_template: >-
+                    {{ as_timestamp(state_attr('sensor.livetrack_session','end'),0) > now().timestamp() }}
+              then:
+                - action: script.turn_on
+                  target:
+                    entity_id: script.livetrack_update_livetrack
+                  data:
+                    variables:
+                      url: "{{ restart_livetrack_url }}"
+                      notifier: >-
+                        {% if is_state('input_boolean.livetrack_notifications','on')
+                           and 'notify.' in states('input_text.livetrack_notifier_name') %}
+                          {{ states('input_text.livetrack_notifier_name') }}
+                        {% else %}
+                          {{ none }}
+                        {% endif %}
+                      ios_message_style: >-
+                        {{ is_state('input_boolean.livetrack_ios_message_style','on') }}
+  mode: parallel
+  max: 10
+
+
 - alias: 'Livetrack: Initialize Values at Homeassistant Start'
   id: "livetrack_initialize"
   description: "Will run at HA start. Only need to run once. Can be disabled afterwards"
@@ -537,7 +720,6 @@ automation:
               entity_id: input_text.livetrack_notifier_name
               state: ""
           sequence:
-            - stop: Stopping automation. No further values set.
             - action: input_text.set_value
               data:
                 value: notify.notify
@@ -592,7 +774,7 @@ script:
           text: 
         description: "The Livetrack URL from Garmin "
         example: >-
-          https://livetrack.garmin.com/session/8739a8d5-5f1a-4fde-9a6d-d51edb47c9a1/token/C28516F21313BDE781DB8171A5BC9976
+          https://livetrack.garmin.com/session/<session_id>/token/<token>
         required: true
       update_interval:
         name: Update interval
@@ -620,9 +802,11 @@ script:
     sequence:
       - variables:
           update_interval_minutes: "{{ int(update_interval,2) if update_interval else 2 }}"
+          stale_trackpoint_minutes: "{{ [30, (int(update_interval,2) if update_interval else 2) * 4] | max }}"
           livetrack_session: >-
-            {{ url |regex_replace(find='.*/session/', replace='', ignorecase=True)
-            |regex_replace(find='/.*', replace='', ignorecase=True) -}}
+            {%- set clean_url = url | regex_replace(find='=\r?\n|\r?\n', replace='') -%}
+            {%- set sessions = clean_url | regex_findall(find='/session/([^/?#&]+)', ignorecase=True) -%}
+            {{ sessions[0] if sessions | count else '' }}
           script_start: "{{ as_timestamp(now()) }}"
           use_notification: "{{ notifier is defined and notifier != none }}"
           use_ios_message_style: "{{ ios_message_style == true or ios_message_style is not defined }}"
@@ -639,12 +823,18 @@ script:
           entity_id: input_text.livetrack_active_url
         alias: "INITIAL: Set livetrack active URL to the livetrack in progress"
         action: input_text.set_value
+      - alias: "INITIAL: Wait until livetrack active ID is parsed"
+        wait_template: >-
+          {{ states('sensor.livetrack_active_id') == url
+             and state_attr('sensor.livetrack_active_id','session') == livetrack_session
+             and state_attr('sensor.livetrack_active_id','token') not in [none, ''] }}
+        continue_on_timeout: true
+        timeout: "00:02:00"
       - alias: "INITIAL: Fetch Livetrack Session & TrackPoint data"
         action: homeassistant.update_entity
         data:
           entity_id:
-            - sensor.livetrack_session
-            - sensor.livetrack_trackpoints
+            - sensor.livetrack_data
       - alias: >-
           INITIAL: Wait until livetrack_session is updated or session matches
           active_url
@@ -683,7 +873,7 @@ script:
               user_text_len: "{{ states('input_text.livetrack_users') | length }}"
               new_usr_json: >-
                 {{ {"usr":state_attr('sensor.livetrack_session','userDisplayName')|
-                trim,"act":iif(new_users_active,1,0)} }}
+                trim,"act":iif(accept_first,1,0)} }}
               json_len_err: >-
                 {{ user_not_in_list and user_text_len + new_usr_json | length > 252
                 }}
@@ -794,10 +984,17 @@ script:
                 entity_id: input_text.livetrack_active_url
               alias: Set livetrack active URL to the livetrack in progress
               action: input_text.set_value
+            - alias: Wait until livetrack active ID is parsed
+              wait_template: >-
+                {{ states('sensor.livetrack_active_id') == url
+                   and state_attr('sensor.livetrack_active_id','session') == livetrack_session
+                   and state_attr('sensor.livetrack_active_id','token') not in [none, ''] }}
+              continue_on_timeout: true
+              timeout: "00:02:00"
             - data: {}
               target:
                 entity_id:
-                  - sensor.livetrack_trackpoints
+                  - sensor.livetrack_data
               alias: Fetch Livetrack TrackPoints
               action: homeassistant.update_entity
             - wait_template: >-
@@ -832,6 +1029,16 @@ script:
           - condition: template
             value_template: "{{ use_notification == true }}"
             alias: If Livetrack notifications is enabled
+          - condition: template
+            value_template: > 
+                {{  is_state('input_boolean.livetrack_strict_user_control','off')
+                    or (
+                      is_state('input_boolean.livetrack_strict_user_control','on') 
+                      and (states('input_text.livetrack_users').replace("'",'"') | from_json) 
+                      | selectattr("usr", "equalto", state_attr('binary_sensor.livetrack_in_progress','garmin_user')) 
+                      | selectattr("act", "equalto", 1) | list | count > 0
+                    ) }}
+            alias: Send notifications when strict user checks allow it
         then:
           - alias: Send notification based on boolean configuration
             if:
@@ -934,6 +1141,14 @@ script:
                 - condition: template
                   value_template: "{{ repeat.index > (23*60/update_interval_minutes) }}"
                   alias: Test if livetrack has been running for more than 23 hours
+                - condition: template
+                  value_template: >-
+                    {{ is_state('sensor.livetrack_trackpoints', livetrack_session)
+                       and as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > 0
+                       and now().timestamp() - as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > stale_trackpoint_minutes * 60 }}
+                  alias: >-
+                    Test if the LiveTrack has stale trackpoints, usually after a
+                    stopped and discarded Garmin session
           sequence:
             - delay:
                 minutes: >
@@ -955,11 +1170,17 @@ script:
                 entity_id: input_text.livetrack_active_url
               alias: Set livetrack active URL to the livetrack in progress
               action: input_text.set_value
+            - alias: Wait until livetrack active ID is parsed
+              wait_template: >-
+                {{ states('sensor.livetrack_active_id') == url
+                   and state_attr('sensor.livetrack_active_id','session') == livetrack_session
+                   and state_attr('sensor.livetrack_active_id','token') not in [none, ''] }}
+              continue_on_timeout: true
+              timeout: "00:02:00"
             - data: {}
               target:
                 entity_id:
-                  - sensor.livetrack_trackpoints
-                  - sensor.livetrack_session
+                  - sensor.livetrack_data
               alias: Update Livetrack Session and Trackpoint data
               action: homeassistant.update_entity
             - wait_template: >-
@@ -968,7 +1189,10 @@ script:
                 livetrack_session in
                 state_attr('binary_sensor.livetrack_in_progress','livetrack_url')) 
                   or (now().timestamp() > as_timestamp(state_attr('binary_sensor.livetrack_in_progress','end'),now().timestamp()) 
-                      and livetrack_session in state_attr('binary_sensor.livetrack_in_progress','livetrack_url')) }}
+                      and livetrack_session in state_attr('binary_sensor.livetrack_in_progress','livetrack_url'))
+                  or (is_state('sensor.livetrack_trackpoints', livetrack_session)
+                      and as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > 0
+                      and now().timestamp() - as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > stale_trackpoint_minutes * 60) }}
               alias: >-
                 Wait for END value as event from TrackPoint dataset OR that Session
                 End timestamp is in the past
@@ -1001,6 +1225,14 @@ script:
                     than 10 minutes
                   condition: template
                   value_template: "{{ repeat.index > (10) }}"
+                - alias: >-
+                    Test if LiveTrack trackpoints are stale after a discarded
+                    Garmin session
+                  condition: template
+                  value_template: >-
+                    {{ is_state('sensor.livetrack_trackpoints', livetrack_session)
+                       and as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > 0
+                       and now().timestamp() - as_timestamp(state_attr('sensor.livetrack_trackpoints','dateTime'), 0) > stale_trackpoint_minutes * 60 }}
           sequence:
             - delay:
                 seconds: >
@@ -1022,6 +1254,13 @@ script:
                 entity_id: input_text.livetrack_active_url
               alias: Set livetrack active URL to the livetrack in progress
               action: input_text.set_value
+            - alias: Wait until livetrack active ID is parsed
+              wait_template: >-
+                {{ states('sensor.livetrack_active_id') == url
+                   and state_attr('sensor.livetrack_active_id','session') == livetrack_session
+                   and state_attr('sensor.livetrack_active_id','token') not in [none, ''] }}
+              continue_on_timeout: true
+              timeout: "00:02:00"
             - choose:
                 - conditions:
                     - alias: END message was received from TrackPoints sensor
@@ -1037,7 +1276,7 @@ script:
                       action: homeassistant.update_entity
                       data:
                         entity_id:
-                          - sensor.livetrack_session
+                          - sensor.livetrack_data
                     - alias: Wait for session end timestamp to be in the past
                       wait_template: >-
                         {{ now().timestamp() >
@@ -1061,7 +1300,7 @@ script:
                       action: homeassistant.update_entity
                       data:
                         entity_id:
-                          - sensor.livetrack_trackpoints
+                          - sensor.livetrack_data
                     - alias: Wait for TrackPoints event to receive END message
                       wait_template: >-
                         {{ 'END' in 
@@ -1076,6 +1315,16 @@ script:
           - condition: template
             value_template: "{{ use_notification == true }}"
             alias: If Livetrack notifications is enabled
+          - condition: template
+            value_template: > 
+                {{  is_state('input_boolean.livetrack_strict_user_control','off')
+                    or (
+                      is_state('input_boolean.livetrack_strict_user_control','on') 
+                      and (states('input_text.livetrack_users').replace("'",'"') | from_json) 
+                      | selectattr("usr", "equalto", state_attr('binary_sensor.livetrack_in_progress','garmin_user')) 
+                      | selectattr("act", "equalto", 1) | list | count > 0
+                    ) }}
+            alias: Send notifications when strict user checks allow it
         then:
           - alias: Send notification based on boolean configuration
             if:
