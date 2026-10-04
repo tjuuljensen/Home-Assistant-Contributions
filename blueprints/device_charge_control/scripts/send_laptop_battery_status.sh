@@ -2,7 +2,7 @@
 # 
 # A script to send battery status from a Linux PC to a Home Assistant instance.
 #
-# Author: Torsten Juul-Jensen (tjuuljensen at gmail.com)
+# Author: Torsten Juul-Jensen
 # Created: February 2025
 # Version: 1.4.0
 #
