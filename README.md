@@ -17,7 +17,7 @@ A collection of my  [Home Assistant](https://www.home-assistant.io/) packages an
     - [Package: Copy/Move To-Do List](#package-copymove-to-do-list)
     - [Package: Battery Alert](#package-battery-alert)
     - [Package: Zone Registration](#package-zone-registration)
-    - [Package: Garmin Livetrack](#package-garmin-livetrack)
+    - [Garmin LiveTrack integration (external, testing)](#garmin-livetrack-integration-external-testing)
   - [Installation \& Usage](#installation--usage)
   - [Contributing](#contributing)
   - [License](#license)
@@ -113,14 +113,20 @@ Packages in Home Assistant let you bundle different aspects of your configuratio
 - **Installation**: Download the package [here](https://github.com/tjuuljensen/Home-Assistant-Contributions/raw/refs/heads/main/packages/zone_registration/zone_registration.yaml) together with the required shell script (yeah - sorry) [here](https://github.com/tjuuljensen/Home-Assistant-Contributions/raw/refs/heads/main/packages/zone_registration/zone_registration.sh).
 
 
-### Package: Garmin Livetrack
+### Garmin LiveTrack integration (external, testing)
 
-> **IMPORTANT**: DOES NOT WORK in current form. A major 2025 rewrite is in progress since garmin rewrote their livetrack interface.
+> **Status**: In testing. It is not currently presented as a production-ready contribution.
 
-> **What it’s for**: Integrates Garmin LiveTrack data into Home Assistant by monitoring LiveTrack emails, extracting session and trackpoint data, and updating sensors with real-time activity details.
+The former Garmin LiveTrack package has been removed from this repository. The
+current implementation is maintained separately in
+[`tjuuljensen/ha-garmin-livetrack`](https://github.com/tjuuljensen/ha-garmin-livetrack).
+Follow that repository's documentation for current installation and testing
+instructions.
 
-- **Example Use Case**: Ideal for fitness enthusiasts who want to track their runs, rides, or other activities directly in Home Assistant, visualize live session progress, and receive notifications when a session starts or ends.
-- **Installation**: Download the package [here](https://github.com/tjuuljensen/Home-Assistant-Contributions/raw/refs/heads/main/packages/garmin_livetrack/garmin_livetrack.yaml)
+- **Purpose**: Integrates Garmin LiveTrack data into Home Assistant by monitoring
+  LiveTrack sessions and exposing activity details.
+- **Testing**: Expect incomplete behavior and breaking changes while the external
+  repository is being validated.
 
 ---
 
@@ -165,4 +171,4 @@ This repository is licensed under the [MIT License](LICENSE). Feel free to use, 
 
 ---
 
-Happy automating! If you find these contributions helpful, consider giving the repository a ⭐ on [GitHub](https://github.com/tjuuljensen/Home-Assistant-Contributions).  
+Happy automating! If you find these contributions helpful, consider giving the repository a ⭐ on [GitHub](https://github.com/tjuuljensen/Home-Assistant-Contributions).
