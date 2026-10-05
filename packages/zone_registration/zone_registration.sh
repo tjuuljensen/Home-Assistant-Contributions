@@ -25,6 +25,7 @@
 #   -d, --directory DIR    Directory containing FILENAME (default: current).
 #       --delete DATE      Remove records for DATE instead of updating.
 #   -h, --help             Display usage information.
+#   -v, --version          Display the script version.
 #
 # CSV columns:
 #   Date;Minutes;First;Last;Review;Entry;Comment
@@ -41,9 +42,16 @@
 #
 # Prerequisites:
 #   Bash, GNU date, realpath, mktemp, awk, and a writable target directory.
+#
+# Version:
+#   1.0.0
+#
+# Changelog:
+#   1.0.0 - Initial versioned CLI release.
 
 
 # Default values for arguments
+VERSION="1.0.0"
 DATE=$(date +%F)
 TIME=$(date +%T)
 ENTRY="manual"
@@ -58,7 +66,7 @@ DELETE=0
 
 # Function to display syntax
 display_syntax() {
-  echo "Syntax: $0 [[-f date] [-m entry] [-t minutes] [-r review] [-c comment] [-d directory]] [--delete date] filename"
+  echo "Syntax: $0 [[-f date] [-e entry] [-t minutes] [-r review] [-c comment] [-d directory]] [--delete date] filename"
   echo "Options:"
   echo "  -e, --entry      Set the entry mode (default: manual)"
   echo "  -t, --minutes    Set the minutes (default: 0)"
@@ -67,6 +75,7 @@ display_syntax() {
   echo "  -c, --comment    Set the comment (default: empty)"
   echo "  -d, --directory  Set the working directory (default: current directory)"
   echo "  --delete         Remove a date"
+  echo "  -v, --version    Display the script version"
   exit 1
 }
 
@@ -75,6 +84,11 @@ display_syntax() {
 if [[ ${ARGS_NUM} -eq 0 ]]; then
   echo "Error: No arguments given. Filename must be given."
   exit 1
+fi
+
+if [[ "${1}" == "-v" || "${1}" == "--version" ]]; then
+  echo "${VERSION}"
+  exit 0
 fi
 
 
@@ -164,6 +178,10 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       display_syntax
       ;;
+    -v|--version)
+      echo "${VERSION}"
+      exit 0
+      ;;
     *)
       if [[ ! "$1" == "${FILENAME}" ]] ; then 
         echo "Unknown option: $1"
@@ -200,4 +218,3 @@ else
   # Update CSV file
   awk -v DATE="${DATE}" -v TIME="${TIME}" -v MINUTES="${MINUTES}" -v ENTRY="${ENTRY}" -v REVIEW="${REVIEW}" -v COMMENT="${COMMENT}" -F';' 'BEGIN{OFS=";"} $1==DATE {$2=MINUTES; $4=TIME; $5=REVIEW; $7=COMMENT; found=1} {print} END{if (!found) print DATE ";" MINUTES ";" TIME ";" TIME ";" REVIEW ";" ENTRY ";" COMMENT}' "$FILENAME" >  "$TMP_FILE" && mv "$TMP_FILE" "$FILENAME"
 fi
-
