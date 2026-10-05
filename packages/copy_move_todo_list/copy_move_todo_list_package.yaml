@@ -8,14 +8,19 @@
 ## Changelog
 ################################################
 #
-# 0.1.0 (2025-01-02)
-#   Added
-#   - Version 0.1.0 created
+# 0.2.1 (2026-04-22)
+#   Changed
+#   - Changelog order normalized to newest-first.
+#
 # 0.2.0 (2025-02-18)
 #   Changed
 #   - Filter selection improved to avoid unintended states.
 #   Note
 #   - Description updated to explain limitations in script.
+#
+# 0.1.0 (2025-01-02)
+#   Added
+#   - Version 0.1.0 created
 #
 
 ################################################
@@ -70,6 +75,12 @@ script:
         example: "true"
         required: false
     sequence:
+      - if:
+          - alias: Source and destination are the same list
+            condition: template
+            value_template: "{{ source == destination }}"
+        then:
+          - stop: Source and destination are the same list. Nothing to do.
       - choose:
           - conditions:
               - alias: Filter is defined and empty
@@ -100,8 +111,8 @@ script:
             alias: Get filtered source to-do items
       - repeat:
           for_each: >
-            {% set list_name = items.keys() | list %} {{
-            items[list_name[0]]['items'] }}
+            {% set list_name = items.keys() | list %}
+            {{ items[list_name[0]]['items'] if list_name | length > 0 else [] }}
           sequence:
             - action: todo.add_item
               data:

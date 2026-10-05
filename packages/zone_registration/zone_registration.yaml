@@ -7,9 +7,23 @@
 ## Changelog
 ################################################
 #
-# 0.2.0 (2023-09-23)
+# 0.3.3 (2026-04-22)
+#   Changed
+#   - Fixed `input_select.reload` event trigger filter (`service` key)
+#   - Fixed template config reads using invalid `states(entity, 'options')` calls
+#   - Fixed config-save template variable initialization order
+#   - `script.zone_registration_update_csv` now honors explicit `filename` input
+#   - Added safer template defaults for config zone/person lookups
+#   - Guarded yearly statistics template against empty arrays
+#   - Added `unique_id` for template entities
+#
+# 0.3.2 (2025-03-28)
 #   Added
-#   - Version 0.2.0 created
+#   - Attribute 'availability' added as attribute on Hue Motion Sensor Hub Data
+#
+# 0.3.1 (2025-02-15)
+#   Added
+#   - Syntax in automations changed to new syntax style (actions and triggers)
 #
 # 0.3.0 (2023-10-08)
 #   Added
@@ -19,14 +33,10 @@
 #   - Fully functional for two people & locations
 #   - scipt rewritten to use filename as paameter instead of zone
 #   - Config valid template sensor added
-# 
-# 0.3.1 (2025-02-15)
-#   Added
-#   - Syntax in automations changed to new syntax style (actions and triggers)
 #
-# 0.3.2 (2025-03-28)
+# 0.2.0 (2023-09-23)
 #   Added
-#   - Attribute 'availability' added as attribute on Hue Motion Sensor Hub Data
+#   - Version 0.2.0 created
 #
 ################################################
 ## Explainer
@@ -257,42 +267,14 @@
 #
 #
 ################################################
-## Customize
-################################################
-
-homeassistant:
-
-  customize:
-    ################################################
-    ## Node Anchors
-    ################################################
-
-    package.node_anchors:
-      customize: &customize
-        package: 'zone_registration'
-
-    ################################################
-    ## Customize Group
-    ################################################
-
-    group.zone_registration:
-      <<: *customize
-      friendly_name: "Zone registration"
-      icon: mdi:office-building-marker
-
-    group.zone_registration_config:
-      <<: *customize
-      friendly_name: "Zone registration config"
-      icon: mdi:office-building-cog
-
-
-################################################
 ## Group
 ################################################
 
 group:
 
   zone_registration:
+    name: "Zone registration"
+    icon: mdi:office-building-marker
     entities:
       - input_datetime.zone_registration_date_start
       - input_datetime.zone_registration_date_end
@@ -304,6 +286,8 @@ group:
       
 
   zone_registration_config:
+    name: "Zone registration config"
+    icon: mdi:office-building-cog
     entities:
       - input_select.zones
       - input_select.person_entities
@@ -404,7 +388,7 @@ input_select:
 shell_command:
 
   # Add zone registration to csv file
-  zone_registration: "/config/www/csv/zone_registration.sh --entry {{ entry }} --minutes {{ minutes | string }} --date {{ date | string if date is defined  }} --review {{ review }} {{ Null if comment is not defined else ' --comment \"'+comment+'\"' }} --directory {{ '/config/www/csv/' if directory is not defined else directory }} {{ filename }}" 
+  zone_registration: "/config/www/csv/zone_registration.sh --entry {{ entry }} --minutes {{ minutes | string }} --date {{ date | string if date is defined  }} --review {{ review }} {{ '' if comment is not defined else ' --comment \"'+comment+'\"' }} --directory {{ '/config/www/csv/' if directory is not defined else directory }} {{ filename }}" 
 
   # Create directory csv under /config/ww - but only if /config/www exists (safeguard check)
   create_csv_dir: 'CSVDIR=/config/www/csv; [[ -d $(dirname ${CSVDIR}) ]] && [[ ! -d ${CSVDIR} ]] && mkdir -p ${CSVDIR}'
@@ -426,9 +410,11 @@ command_line:
   # Working: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:7]) | map({month: .[0].date[0:7], days: length})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:4]) | map({year: .[0].date[0:4], days: length}))}' /config/www/csv/work_2023.csv"
   - sensor:
       name: Zone registration statistics
-      command: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], month: .[0][0:7], year: .[0][0:4], days: length}) | group_by(.month) | map({month: .[0].month, date: (.[0].date[0:7] + \"-01\"), days: length, year: .[0].year})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], year: .[0][0:4], days: length}) | group_by(.year) | map({year: .[0].year, days: length}))}'  /config/www/csv/{{ states('sensor.zone_registration_filename') }}"
-      availability: "{{ states('sensor.zone_registration_filename') not in ['unknown','unavailable', none] }}"
-      value_template: "{{ value_json.yearly[-1].days if value_json is defined else [] }}"
+      command: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], month: .[0][0:7], year: .[0][0:4], days: length}) | group_by(.month) | map({month: .[0].month, date: (.[0].date[0:7] + \"-01\"), days: length, year: .[0].year})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], year: .[0][0:4], days: length}) | group_by(.year) | map({year: .[0].year, days: length}))}' /config/www/csv/{{ states('sensor.zone_registration_filename') if states('sensor.zone_registration_filename') not in ['unknown','unavailable','none','', none, 'unknown.csv'] else 'zone_registration.csv' }} 2>/dev/null || echo '{\"monthly\":[],\"yearly\":[]}'"
+      availability: >
+        {% set filename = states('sensor.zone_registration_filename') %}
+        {{ filename not in ['unknown','unavailable','none','', none, 'unknown.csv'] }}
+      value_template: "{{ value_json.yearly[-1].days if (value_json is mapping and value_json.yearly is sequence and (value_json.yearly | length > 0)) else 0 }}"
       scan_interval: 3600  # Update hourly
       json_attributes:
         - monthly
@@ -444,25 +430,35 @@ template:
 - sensor:
 
     - name: Zone registration filename
+      unique_id: zone_registration_filename
       state: > 
-        {{ ((states('input_text.zone_registration_config_label')| regex_replace(find='[^\\w]', replace='_')).replace('__','_').lower())+".csv" }}
+        {% set label = states('input_text.zone_registration_config_label') %}
+        {% if label in ['unknown', 'unavailable', 'none', '', none] %}
+          zone_registration.csv
+        {% else %}
+          {{ ((label | regex_replace(find='[^\\w]', replace='_')).replace('__','_').lower()) + ".csv" }}
+        {% endif %}
       icon: mdi:file-settings
 
 
 - binary_sensor: 
     - name: Zone registration config valid
+      unique_id: zone_registration_config_valid
       icon: mdi:map-marker-check
       state: >
+        {% set parsed_json = this.attributes.get('json') if this.attributes is mapping else none %}
         {{ not ((states('input_text.zone_registration_config') | length == 0 
            or states('input_text.zone_registration_config') == '[]') 
-           or this.attributes.json == None) }} 
+           or parsed_json == none) }} 
       attributes:
         json: >
           {{ states('input_text.zone_registration_config').replace('\'','"') | from_json }}
         zones: >
-          {{ this.attributes.json | map(attribute='zone') | list if this.attributes.json != None else [] }}
+          {% set parsed_json = this.attributes.get('json') if this.attributes is mapping else none %}
+          {{ parsed_json | map(attribute='zone') | list if parsed_json is sequence else [] }}
         persons: >
-          {{ this.attributes.json | map(attribute='person') | list if this.attributes.json != None else [] }}
+          {% set parsed_json = this.attributes.get('json') if this.attributes is mapping else none %}
+          {{ parsed_json | map(attribute='person') | list if parsed_json is sequence else [] }}
 
 
 ################################################
@@ -548,7 +544,7 @@ automation:
       event_type: call_service
       event_data:
         domain: input_select
-        action: reload
+        service: reload
     condition: []
     action: 
       - delay: "00:00:01"
@@ -594,13 +590,13 @@ automation:
             {%- endif %}
           {%- endfor %}
         selected_person: | 
-          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"') | from_json) %}
+          {% set options=(states('input_text.zone_registration_config').replace('\'','"') | from_json) %}
           {{ options[selected_config].person }}
         selected_zone: |
-          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"')  | from_json) %} 
+          {% set options=(states('input_text.zone_registration_config').replace('\'','"')  | from_json) %} 
           {{ options[selected_config].zone }}
         config_name: |
-          {% set options=(states('input_text.zone_registration_config','options').replace('\'','"')  | from_json) %} 
+          {% set options=(states('input_text.zone_registration_config').replace('\'','"')  | from_json) %} 
           {{ options[selected_config].name }}
     - action: input_select.select_option
       data:
@@ -633,7 +629,7 @@ automation:
       - condition: template
         value_template: >
           {{ trigger.event.data.entity_id  in
-          state_attr('binary_sensor.zone_registration_config_valid','zones') }}
+          (state_attr('binary_sensor.zone_registration_config_valid','zones') | default([], true)) }}
         alias: Test if triggering entity id exist as part of zone configuration
     action:
       - variables:
@@ -648,7 +644,7 @@ automation:
             {%- endif %}
       - condition: template 
         value_template: >
-          {{ trigger_person in state_attr('binary_sensor.zone_registration_config_valid','persons') }}
+          {{ trigger_person in (state_attr('binary_sensor.zone_registration_config_valid','persons') | default([], true)) }}
         alias: Test if triggering person is part of zone configuration
       - condition: template 
         value_template: >
@@ -692,9 +688,9 @@ script:
           
           {%- set zone = states('input_select.zones') %}  
           {%- set person =  states('input_select.person_entities') %}  
-          {%- set read_config = states('input_text.zone_registration_config') %}
+          {%- set read_config_raw = states('input_text.zone_registration_config') %}
           {%- set zone_reg = namespace(config=[]) %}
-          {%- set read_config = [] if number_of_configs == 0 else read_config.replace('\'','"') |from_json %} 
+          {%- set read_config = [] if read_config_raw in ['unknown','unavailable','', '[]', none] else read_config_raw.replace('\'','"') |from_json %} 
           {%- set number_of_configs = read_config | length %}
 
           {%- if number_of_configs > 0 %}
@@ -783,7 +779,7 @@ script:
         review_var: '{{ iif(review is defined, review, "") }}'
         comment_var: '{{ iif(comment is defined, comment, "" ) }}'
         directory_var: '{{ iif(directory is defined, directory, ''/config/www/csv'')}}'
-        filename_var: '{{ states(''sensor.zone_registration_filename'') }}'
+        filename_var: '{{ iif(filename is defined, filename, states(''sensor.zone_registration_filename'')) }}'
       alias: define variables with default values from input
     - choose:
       - conditions:

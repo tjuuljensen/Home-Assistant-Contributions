@@ -1,27 +1,3 @@
-# =============================================================================
-# Device Charger Control - Always On
-# device_charger_control_always_on.yaml
-#
-# Controls charging of an always-on device with a battery sensor using an
-# attached power plug/switch.
-#
-# Author: Torsten Juul-Jensen <redacted>
-#
-# Changelog:
-#   0.2.0 (2026-05-12)
-#     Changed:
-#       - Added queued execution with max 5.
-#       - Added Home Assistant startup reconciliation.
-#       - Changed battery thresholds to inclusive <= min and >= max.
-#       - Added optional notification actions.
-#       - Added switch/battery unavailable handling.
-#       - Improved documentation and upgrade notes.
-#
-#   0.1.0 (2025-02-17)
-#     Added:
-#       - Initial version.
-# =============================================================================
-
 blueprint:
   name: Device Charge Control - for "always-on" devices
   domain: automation

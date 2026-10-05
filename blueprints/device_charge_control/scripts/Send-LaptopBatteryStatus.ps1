@@ -1,332 +1,678 @@
 <#
 .SYNOPSIS
-    A PowerShell script to send battery status from a Windows PC to a Home Assistant instance.
+    Sends Windows laptop battery status to Home Assistant through MQTT or REST.
 
 .DESCRIPTION
-    This script retrieves battery status information such as charge percentage, battery_state (charging/discharging), 
-    and estimated runtime. It sends the data to a Home Assistant instance using its API.
+    Reads battery status from Win32_Battery and publishes retained JSON telemetry
+    to MQTT, or updates a Home Assistant entity through the /api/states endpoint.
 
-    The script can also install itself as a scheduled task to run periodically or based on specific triggers.
+    The payload contract is aligned with send-laptop-battery-status.sh so Windows and
+    Linux clients send the same logical attributes:
+
+      state: battery percentage
+      attributes:
+        status: normalized battery status text
+        battery_state: normalized battery status text
+        battery_state_raw: raw Win32_Battery BatteryStatus value(s)
+        battery_percent: battery percentage
+        time_remaining: minutes until empty/full, or null
+        time_remaining_minutes: minutes until empty/full, or null
+        time_remaining_text: readable runtime text, or null
+        power_source: battery, ac, or unknown
+        source: win32_battery
+        battery_count: number of Win32_Battery records
+        device_class: battery
+        state_class: measurement
+        unit_of_measurement: "%"
+
+    Additional attributes can be supplied as either a JSON object or a JSON array of
+    objects. Additional attributes are merged after the default attributes, so they can
+    intentionally override defaults.
 
 .PARAMETER HomeAssistantURL
-    [Required] The URL of the Home Assistant server. 
-    Example: "http://homeassistant.local:8123" or "https://homeassistant.local:8123".
+    Base URL of the Home Assistant server.
+    Example: "http://homeassistant.local:8123".
 
 .PARAMETER HomeAssistantSensor
-    [Required] The name of the sensor to update in Home Assistant. 
-    Example: "sensor.laptop_battery". If entered without "sensor.", the prefix will be added automatically.
+    Entity ID or sensor name. If the value does not start with "sensor.", the prefix is added.
 
 .PARAMETER HomeAssistantToken
-    [Required] A long-lived access token generated in Home Assistant. 
-    This token is used for authenticating API requests.
+    Home Assistant long-lived access token.
+
+.PARAMETER MqttHost
+    MQTT broker hostname or IP address.
+
+.PARAMETER MqttPort
+    MQTT broker port. Defaults to 1883.
+
+.PARAMETER MqttTopic
+    MQTT state topic. The package expects home/laptops/p52/battery/state for P52.
+
+.PARAMETER MqttUsername
+    Optional MQTT username.
+
+.PARAMETER MqttPassword
+    Optional MQTT password.
+
+.PARAMETER MqttPublisherPath
+    Path to mosquitto_pub.exe. Defaults to mosquitto_pub.exe from PATH.
+
+.PARAMETER NoMqttRetain
+    Publish MQTT telemetry without the retain flag. Retain is recommended.
 
 .PARAMETER NetworkSSID
-    [Optional] The SSID of the Wi-Fi network to validate before sending battery data. 
-    If provided, the script will only execute when connected to the specified SSID.
+    Optional network guard. If provided, the script exits without sending data unless
+    the active network profile name or active Wi-Fi SSID matches this value.
 
 .PARAMETER SensorAttributes
-    [Optional] One or more additional attributes to include with the sensor update. Added as list of JSON key-value. 
-    Each attribute should be specified as a key-value pair. Please notice that when parsing from Powershell command line
-    there are strict rules for interpretation of the content. 
-    The list of JSON elements here: [{"battery_alert_disabled": true}, {"state_class": "measurement"}}
-    would be required to be entered on the command line like this:
-    '[{"""battery_alert_disabled""": true}, {"""state_class""": """measurement"""}}'
-    
+    Optional JSON object or JSON array of objects merged into the Home Assistant attributes.
+
 .PARAMETER Install
-    [Optional] If specified, the script will install itself as a scheduled task running every 5 minutes and at startup. 
-    Additional triggers (e.g., event-based) must be added manually in Task Scheduler.
+    Installs the script as a scheduled task using PowerShell scheduled task cmdlets.
+
+.PARAMETER EasyInstall
+    Installs the script as a scheduled task using XML import. This includes calendar,
+    startup, wake-from-sleep, and AC power event triggers.
 
 .EXAMPLE
-    Run the script to send battery data directly to Home Assistant:
-    .\Send-BatteryStatus.ps1 -HomeAssistantURL "http://homeassistant.local:8123" `
-    -HomeAssistantSensor "sensor.laptop_battery" `
-    -HomeAssistantToken "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." `
-    -SensorAttributes "[{"""battery_alert_disabled""" : true}, {"""device_class""" : """battery""" },{"""state_class""" : """measurement"""}]"
+    .\send-laptop-battery-status.ps1 `
+        -MqttHost "homeassistant.local" `
+        -MqttTopic "home/laptops/p52/battery/state"
 
 .EXAMPLE
-    Install the script as a scheduled task:
-    .\Send-BatteryStatus.ps1 -Install `
-    -HomeAssistantURL "http://homeassistant.local:8123" `
-    -HomeAssistantSensor "sensor.laptop_battery" `
-    -HomeAssistantToken "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    .\send-laptop-battery-status.ps1 `
+        -HomeAssistantURL "http://homeassistant.local:8123" `
+        -HomeAssistantSensor "laptop_battery" `
+        -HomeAssistantToken "TOKEN" `
+        -NetworkSSID "Trusted WiFi" `
+        -SensorAttributes '{"state_class":"measurement","battery_alert_disabled":true}'
+
+.EXAMPLE
+    .\send-laptop-battery-status.ps1 `
+        -Install `
+        -MqttHost "homeassistant.local" `
+        -MqttTopic "home/laptops/p52/battery/state" `
+        -NetworkSSID "Trusted WiFi" `
+        -SensorAttributes '{"state_class":"measurement"}'
+
+.REQUIREMENTS
+    - Windows PowerShell 5.1 or later
+    - mosquitto_pub.exe for MQTT publishing
+    - A Home Assistant long-lived access token for REST publishing
+    - Administrator privileges for scheduled task installation
 
 .NOTES
     Author: Torsten Juul-Jensen
     Created: January 8, 2025
-    Version: 1.5.2
-    Version comment: EasyInstall option added. Uses temporary XML file to create a complete Scheduled Task with all triggers. Header updated.
-
-    IMPORTANT note on installation! 
-        There are two (!) ways of installing the script - Install and EasyInstall. 
-        Read carefully and select your preferred one.
-
-    Using the -EasyInstall option:
-        Using EasyInstall is the  recommended for inexperienced users. If you don't know how to create a new account on your windows machine and configure it to run 
-        as a service account, select EasyInstall! 
-        Please notice that selecting this, it makes the script run as SYSTEM which is a high privilege account and is not recommended for security reasons. 
-        It is STRONGLY RECOMMENDED to edit the scheduled task after a successful install and only allow it to run when located on your local WiFi/network:
-        Open Task Scheduler and select **Conditions/Network** 
-            - Check 'Start only if the following network connection is available' and select the network on which you want the script to run.
-
-    Using the Install option:
-        If using the -Install option, you should configure custom triggers in Task Scheduler (e.g., event-based triggers), as described here.
-        - After task scheduler installation, you should edit the following in the Windows task scheduler user interface:
-        - **Security options:** Enable 'Run whether user is logged on or not'. This will ensure that the execution window runs hidden.
-        - **Conditions/Network:** Check 'Start only if the following network connection is available' and select the network on which you want the script to run.
-        - **Triggers:** Add an 'On an event' trigger (Log: System, Source: Power-Troubleshooter, Event ID: 1). Triggers on resume from sleep.
-        - **Triggers:** Add an 'On an event' trigger (Custom, New event filter, XML). Add the following XML which will trigger when AC power is disconnected:
-            ```
-            <QueryList>
-                <Query Id="0" Path="System">
-                    <Select Path="System">*[System[(EventID=105)]] and *[System[Provider[@Name="Microsoft-Windows-Kernel-Power"]]] and *[EventData[Data[@Name="AcOnline"] and (Data='false')]]</Select>
-                </Query>
-            </QueryList>
-            ```
-        - Add another custom XML trigger like above, but change `Data='false'` to `Data='true'`. Triggers when AC power is connected.
-
-        
-    IMPORTANT note on adding JSON parameters on command line!
-        - Additional attributes can be passed via `-SensorAttributes` as JSON are included as key-value pairs in the sensor update payload.
-        - Parsing JSON to PowerShell scripts **can be tricky**
-          **This format works** when calling the script with -File (notice the single quotes encapsulating the JSON):
-                '[{"""battery_alert_disabled""" : true}, {"""device_class""" : """battery""" },{"""state_class""" : """measurement"""}]'
-          Other formats might work, but it is a pain to figure the correct syntax.
-        - The JSON format above does NOT work when calling the .ps1 directly! (like if you enter .\Send-LaptopBatteryStatus.ps1 from command line).
-        - You should use the -File option when calling the script with JSON parameters. Yes, I know I said it twice - But it is highly likely that it fails if you don't'...
-
-
-.REQUIREMENTS
-    - PowerShell 5.1 or later
-    - A long-lived access token generated in Home Assistant
-    - Administrator privileges (for installing scheduled tasks)
-    - A sensor in Home Assistant made for the device. Use the following template to generate a template sensor:
-      ```
-        - sensor:
-            - name: "Laptop Battery"
-                unique_id: "laptop_battery"
-                state: "{{ this.state }}"
-                device_class: battery
-                state_class: measurement
-                unit_of_measurement: "%"
-                attributes:
-                status: "{{ this.attributes.status }}"
-                battery_state: "{{ this.attributes.battery_state }}"
-                time_remaining: "{{ this.attributes.time_remaining }}"  
-      ```
-
-.LINK
-    For more details on Home Assistant long-lived access tokens:
-    https://www.home-assistant.io/docs/authentication/
+    Version: 1.7.1
+    GPT iteration: 2026-05-31
+    Version comment: Publish MQTT JSON from a UTF-8 temp file so PowerShell native
+                     argument handling cannot strip JSON quotes.
 #>
 
-# Main script for sending battery data or installing as a scheduled task
+[CmdletBinding()]
 param (
-    [Parameter(Mandatory=$true)]
-    [string]$HomeAssistantURL,           # Required: Base URL of the Home Assistant server
-    [Parameter(Mandatory=$true)]
-    [string]$HomeAssistantSensor,        # Required: Name of the sensor to update
-    [Parameter(Mandatory=$true)]
-    [string]$HomeAssistantToken,         # Required: Home Assistant Access Token
-    [string]$NetworkSSID,                # Optional: SSID for Wi-Fi validation
-    [string]$SensorAttributes,           # Optional: Additional attributes for the sensor in JSON format (read .NOTES regarding parsing JSON to powershell!)
-    [switch]$Install,                    # Optional: Installs the script as a scheduled task
-    [switch]$EasyInstall                 # Optional: Installs the script as a scheduled task using the full trigger via XML import
+    [string]$HomeAssistantURL,
+
+    [string]$HomeAssistantSensor,
+
+    [string]$HomeAssistantToken,
+
+    [string]$MqttHost,
+
+    [int]$MqttPort = 1883,
+
+    [string]$MqttTopic,
+
+    [string]$MqttUsername,
+
+    [string]$MqttPassword,
+
+    [string]$MqttPublisherPath = 'mosquitto_pub.exe',
+
+    [switch]$NoMqttRetain,
+
+    [string]$NetworkSSID,
+
+    [string]$SensorAttributes,
+
+    [switch]$Install,
+
+    [switch]$EasyInstall
 )
 
-# Ensure HomeAssistantSensor is prefixed with "sensor."
-if (-not $HomeAssistantSensor.StartsWith("sensor.")) {
-    $HomeAssistantSensor = "sensor.$HomeAssistantSensor"
-}
-
-# Ensure HomeAssistantURL does not have a trailing slash
-if ($HomeAssistantURL.EndsWith("/")) {
-    $HomeAssistantURL = $HomeAssistantURL.TrimEnd("/")
-}
-
-# Construct the full API URL
-$HomeAssistantAPIURL = "$HomeAssistantURL/api/states/$HomeAssistantSensor"
-
-# Parse SensorAttribute as JSON
-$additionalAttributes = @{}
-if ($SensorAttributes) {
-    try {
-        $additionalAttributes = ConvertFrom-Json -InputObject $SensorAttributes
-    } catch {
-        Write-Error "Invalid JSON format for -SensorAttribute: $_"
-        return
-    }
-}   
-
-# Function to detect active network connections
-function Get-NetworkConnections {
-    $connections = Get-NetConnectionProfile | Where-Object {
-        $_.IPv4Connectivity -ne "Disconnected" -and
-        -not [string]::IsNullOrWhiteSpace($_.Name)
-    }
-    return $connections
-}
-
-# Function to send data to Home Assistant
-function Send-DataToHomeAssistant($data) {
-    $headers = @{
-        "Authorization" = "Bearer $HomeAssistantToken"
-        "Content-Type" = "application/json"
-    }
-    # Merge additional attributes with the default attributes
-    $attributes = @{
-        "status" = $data.status
-        "time_remaining" = $data.time_remaining
-        "battery_state" = $data.battery_state
-        "device_class" = "battery"
-        "unit_of_measurement" = "%"
-    } 
-    
-    # Add additional attributes
-    foreach ($entry in $additionalAttributes) {
-        if ($entry -is [PSCustomObject]) {
-            $entry.PSObject.Properties | ForEach-Object {
-                $attributes[$_.Name] = $_.Value
-            }
-        } else {
-            Write-Warning "Skipping entry: Not a valid PSCustomObject"
-        }
-    }
-
-    $body = @{
-        "state" = $data.charge_percent
-        "attributes" = $attributes
-    } | ConvertTo-Json -Depth 10
-
-
-    try {
-        Invoke-RestMethod -Uri $HomeAssistantAPIURL -Method POST -Headers $headers -Body $body
-        Write-Output "Battery data sent to Home Assistant successfully."
-    } catch {
-        Write-Error "Failed to send data to Home Assistant: $_"
-    }
-}
-
-# Function to install the script as a scheduled task
-function Install-ScheduledTask {
+function Write-FatalError {
     param (
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Error $Message
+    exit 1
+}
+
+function ConvertTo-SingleQuotedPowerShellLiteral {
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return "'" + ($Value -replace "'", "''") + "'"
+}
+
+function New-EncodedTaskArguments {
+    param (
+        [Parameter(Mandatory = $true)]
         [string]$ScriptPath
     )
 
-    Write-Output "Starting scheduled task installation..."
+    $scriptLiteral = ConvertTo-SingleQuotedPowerShellLiteral -Value $ScriptPath
+    $commandParts = @(
+        '&',
+        $scriptLiteral
+    )
 
-    # Confirm configuration
-    Write-Output "You have chosen the following configuration:"
+    if (-not [string]::IsNullOrWhiteSpace($HomeAssistantURL)) {
+        $commandParts += '-HomeAssistantURL'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $HomeAssistantURL
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($HomeAssistantSensor)) {
+        $commandParts += '-HomeAssistantSensor'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $HomeAssistantSensor
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($HomeAssistantToken)) {
+        $commandParts += '-HomeAssistantToken'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $HomeAssistantToken
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttHost)) {
+        $commandParts += '-MqttHost'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $MqttHost
+    }
+
+    if ($MqttPort -ne 1883) {
+        $commandParts += '-MqttPort'
+        $commandParts += [string]$MqttPort
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttTopic)) {
+        $commandParts += '-MqttTopic'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $MqttTopic
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttUsername)) {
+        $commandParts += '-MqttUsername'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $MqttUsername
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttPassword)) {
+        $commandParts += '-MqttPassword'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $MqttPassword
+    }
+
+    if ($MqttPublisherPath -ne 'mosquitto_pub.exe') {
+        $commandParts += '-MqttPublisherPath'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $MqttPublisherPath
+    }
+
+    if ($NoMqttRetain) {
+        $commandParts += '-NoMqttRetain'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($NetworkSSID)) {
+        $commandParts += '-NetworkSSID'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $NetworkSSID
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SensorAttributes)) {
+        $commandParts += '-SensorAttributes'
+        $commandParts += ConvertTo-SingleQuotedPowerShellLiteral -Value $SensorAttributes
+    }
+
+    $command = $commandParts -join ' '
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+
+    return "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand $encodedCommand"
+}
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function ConvertFrom-SensorAttributesJson {
+    param (
+        [string]$Json
+    )
+
+    $attributes = [ordered]@{}
+
+    if ([string]::IsNullOrWhiteSpace($Json)) {
+        return $attributes
+    }
+
+    try {
+        $parsed = ConvertFrom-Json -InputObject $Json -ErrorAction Stop
+    } catch {
+        Write-FatalError "Invalid JSON format for -SensorAttributes: $($_.Exception.Message)"
+    }
+
+    $items = @()
+    if ($parsed -is [array]) {
+        $items = $parsed
+    } else {
+        $items = @($parsed)
+    }
+
+    foreach ($item in $items) {
+        if ($null -eq $item -or -not ($item -is [PSCustomObject])) {
+            Write-FatalError "-SensorAttributes must be a JSON object or an array of JSON objects."
+        }
+
+        foreach ($property in $item.PSObject.Properties) {
+            $attributes[$property.Name] = $property.Value
+        }
+    }
+
+    return $attributes
+}
+
+function Get-ActiveWifiSsid {
+    try {
+        $netshOutput = netsh.exe wlan show interfaces 2>$null
+    } catch {
+        return $null
+    }
+
+    foreach ($line in $netshOutput) {
+        if ($line -match '^\s*SSID\s*:\s*(.+?)\s*$' -and $line -notmatch '^\s*BSSID\s*:') {
+            return $Matches[1]
+        }
+    }
+
+    return $null
+}
+
+function Test-NetworkMatch {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedNetworkName
+    )
+
+    try {
+        $matchingProfile = Get-NetConnectionProfile -ErrorAction Stop | Where-Object {
+            $_.IPv4Connectivity -ne 'Disconnected' -and
+            -not [string]::IsNullOrWhiteSpace($_.Name) -and
+            $_.Name -eq $ExpectedNetworkName
+        } | Select-Object -First 1
+
+        if ($matchingProfile) {
+            return $true
+        }
+    } catch {
+        Write-Warning "Could not read network profiles: $($_.Exception.Message)"
+    }
+
+    $activeSsid = Get-ActiveWifiSsid
+    if ($activeSsid -and $activeSsid -eq $ExpectedNetworkName) {
+        return $true
+    }
+
+    return $false
+}
+
+function Convert-BatteryStatusToState {
+    param (
+        [Parameter(Mandatory = $true)]
+        [int[]]$BatteryStatus
+    )
+
+    # Win32_Battery BatteryStatus values:
+    # 1 = Discharging, 2 = AC/no discharge, 3 = Fully charged,
+    # 6/7/8/9 = Charging variants, 11 = Partially charged.
+    if ($BatteryStatus | Where-Object { $_ -in @(6, 7, 8, 9) }) {
+        return 'charging'
+    }
+
+    if ($BatteryStatus | Where-Object { $_ -eq 1 }) {
+        return 'discharging'
+    }
+
+    if ($BatteryStatus.Count -gt 0 -and -not ($BatteryStatus | Where-Object { $_ -ne 3 })) {
+        return 'full'
+    }
+
+    if ($BatteryStatus.Count -gt 0 -and -not ($BatteryStatus | Where-Object { $_ -ne 2 })) {
+        return 'plugged_in'
+    }
+
+    if ($BatteryStatus | Where-Object { $_ -eq 11 }) {
+        return 'partially_charged'
+    }
+
+    return 'unknown'
+}
+
+function Convert-BatteryStateToPowerSource {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$BatteryState
+    )
+
+    switch ($BatteryState) {
+        'discharging' { return 'battery' }
+        'charging' { return 'ac' }
+        'full' { return 'ac' }
+        'plugged_in' { return 'ac' }
+        default { return 'unknown' }
+    }
+}
+
+function Get-ValidRuntimeMinutes {
+    param (
+        [object[]]$BatteryRecords
+    )
+
+    $validRuntimes = @(
+        $BatteryRecords |
+            Where-Object {
+                $null -ne $_.EstimatedRunTime -and
+                $_.EstimatedRunTime -ge 0 -and
+                $_.EstimatedRunTime -lt 71582788
+            } |
+            ForEach-Object { [int]$_.EstimatedRunTime }
+    )
+
+    if ($validRuntimes.Count -eq 0) {
+        return $null
+    }
+
+    return ($validRuntimes | Measure-Object -Minimum).Minimum
+}
+
+function Get-BatterySnapshot {
+    $batteryRecords = @()
+
+    try {
+        $batteryRecords = @(Get-CimInstance -ClassName Win32_Battery -ErrorAction Stop)
+    } catch {
+        try {
+            $batteryRecords = @(Get-WmiObject -Class Win32_Battery -ErrorAction Stop)
+        } catch {
+            Write-FatalError "Battery information is not available: $($_.Exception.Message)"
+        }
+    }
+
+    if ($batteryRecords.Count -eq 0) {
+        return $null
+    }
+
+    $validPercentages = @(
+        $batteryRecords |
+            Where-Object { $null -ne $_.EstimatedChargeRemaining -and $_.EstimatedChargeRemaining -ge 0 } |
+            ForEach-Object { [double]$_.EstimatedChargeRemaining }
+    )
+
+    if ($validPercentages.Count -eq 0) {
+        Write-FatalError "Battery percentage is not available."
+    }
+
+    $batteryPercent = [int][Math]::Round(($validPercentages | Measure-Object -Average).Average, 0)
+    $statusValues = @($batteryRecords | Where-Object { $null -ne $_.BatteryStatus } | ForEach-Object { [int]$_.BatteryStatus })
+    $batteryState = Convert-BatteryStatusToState -BatteryStatus $statusValues
+    $powerSource = Convert-BatteryStateToPowerSource -BatteryState $batteryState
+    $runtimeMinutes = Get-ValidRuntimeMinutes -BatteryRecords $batteryRecords
+
+    $runtimeText = $null
+    if ($null -ne $runtimeMinutes) {
+        $runtimeText = "$runtimeMinutes minutes"
+    }
+
+    return [ordered]@{
+        charge_percent = $batteryPercent
+        battery_state = $batteryState
+        battery_state_raw = ($statusValues -join ',')
+        battery_status_values = $statusValues
+        time_remaining = $runtimeMinutes
+        time_remaining_text = $runtimeText
+        power_source = $powerSource
+        battery_count = $batteryRecords.Count
+    }
+}
+
+function New-BatteryAttributes {
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$BatteryData,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$AdditionalAttributes
+    )
+
+    $attributes = [ordered]@{
+        status = $BatteryData.battery_state
+        battery_state = $BatteryData.battery_state
+        battery_state_raw = $BatteryData.battery_state_raw
+        battery_status_values = $BatteryData.battery_status_values
+        battery_percent = $BatteryData.charge_percent
+        time_remaining = $BatteryData.time_remaining
+        time_remaining_minutes = $BatteryData.time_remaining
+        time_remaining_text = $BatteryData.time_remaining_text
+        power_source = $BatteryData.power_source
+        source = 'win32_battery'
+        battery_count = $BatteryData.battery_count
+        device_class = 'battery'
+        state_class = 'measurement'
+        unit_of_measurement = '%'
+    }
+
+    foreach ($key in $AdditionalAttributes.Keys) {
+        $attributes[$key] = $AdditionalAttributes[$key]
+    }
+
+    return $attributes
+}
+
+function Send-DataToHomeAssistant {
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$BatteryData,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$AdditionalAttributes
+    )
+
+    $headers = @{
+        Authorization = "Bearer $HomeAssistantToken"
+        'Content-Type' = 'application/json'
+    }
+
+    $attributes = New-BatteryAttributes -BatteryData $BatteryData -AdditionalAttributes $AdditionalAttributes
+
+    $body = [ordered]@{
+        state = $BatteryData.charge_percent
+        attributes = $attributes
+    } | ConvertTo-Json -Depth 10
+
+    try {
+        Invoke-RestMethod `
+            -Uri $HomeAssistantAPIURL `
+            -Method POST `
+            -Headers $headers `
+            -Body $body `
+            -TimeoutSec 30 `
+            -ErrorAction Stop | Out-Null
+
+        Write-Output "Battery data sent to Home Assistant successfully."
+    } catch {
+        Write-FatalError "Failed to send data to Home Assistant: $($_.Exception.Message)"
+    }
+}
+
+function Publish-DataToMqtt {
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$BatteryData,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$AdditionalAttributes
+    )
+
+    $payload = New-BatteryAttributes -BatteryData $BatteryData -AdditionalAttributes $AdditionalAttributes
+    $payload['state'] = $BatteryData.charge_percent
+    $body = $payload | ConvertTo-Json -Depth 10 -Compress
+    $payloadPath = [IO.Path]::GetTempFileName()
+    $utf8NoBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($payloadPath, $body, $utf8NoBom)
+
+    $arguments = @(
+        '-h', $MqttHost,
+        '-p', [string]$MqttPort,
+        '-t', $MqttTopic,
+        '-f', $payloadPath
+    )
+
+    if (-not $NoMqttRetain) {
+        $arguments += '-r'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttUsername)) {
+        $arguments += '-u'
+        $arguments += $MqttUsername
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($MqttPassword)) {
+        $arguments += '-P'
+        $arguments += $MqttPassword
+    }
+
+    try {
+        & $MqttPublisherPath @arguments
+        if ($LASTEXITCODE -ne 0) {
+            Write-FatalError "mosquitto_pub failed with exit code $LASTEXITCODE."
+        }
+
+        Write-Output "Battery data published to MQTT successfully."
+    } catch {
+        Write-FatalError "Failed to publish data to MQTT: $($_.Exception.Message)"
+    } finally {
+        Remove-Item -LiteralPath $payloadPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-ScheduledTaskClassic {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath
+    )
+
+    if (-not (Test-IsAdministrator)) {
+        Write-FatalError "Administrator privileges are required to install the scheduled task."
+    }
+
+    Write-Output "Starting scheduled task installation..."
+    Write-Output "Configuration:"
     Write-Output "- Script Path: $ScriptPath"
     Write-Output "- Home Assistant URL: $HomeAssistantURL"
     Write-Output "- Sensor: $HomeAssistantSensor"
+    Write-Output "- Network SSID guard: $NetworkSSID"
     Write-Output "- Additional Attributes: $SensorAttributes"
+
     $confirmation = Read-Host "Do you want to proceed with this configuration? (yes/no)"
-    if ($confirmation -ne "yes") {
+    if ($confirmation -ne 'yes') {
         Write-Output "Installation cancelled by user."
         return
     }
 
-    # Task settings
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
         -StartWhenAvailable
 
-    # Define the repeating trigger: Daily at midnight, repeats every 5 minutes for 24 hours
-    # Using this two-step approach is a workaround as PowerShell cannot create a daily trigger with 5 minute repetition intervals.
     $dailyTrigger = New-ScheduledTaskTrigger -Daily -At 00:00
-    $tempTrigger = New-ScheduledTaskTrigger -Once -At 00:00 `
+    $repeatTrigger = New-ScheduledTaskTrigger -Once -At 00:00 `
         -RepetitionInterval (New-TimeSpan -Minutes 5) `
         -RepetitionDuration (New-TimeSpan -Hours 23 -Minutes 55)
 
-    $dailyTrigger.Repetition = $tempTrigger.Repetition
+    $dailyTrigger.Repetition = $repeatTrigger.Repetition
 
-    # Other task triggers 
-    $additionalTriggers = @(
-        New-ScheduledTaskTrigger -AtStartup
+    $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+    $triggers = @(
+        $startupTrigger
+        $dailyTrigger
     )
 
-    # Combine all triggers
-    $triggers = $AdditionalTriggers + $dailyTrigger
+    $arguments = New-EncodedTaskArguments -ScriptPath $ScriptPath
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
 
-    # Task action
-    $SensorAttributes = $SensorAttributes.Replace('"','"""') # Replae to match JSON requirements from command line
-    $arguments = "-WindowStyle hidden -File `"$ScriptPath`" -HomeAssistantURL `"$HomeAssistantURL`" -HomeAssistantSensor `"$HomeAssistantSensor`" -HomeAssistantToken `"$HomeAssistantToken`" -SensorAttributes `"$SensorAttributes`""
-    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments
-
-    # Register the task
     try {
-        Register-ScheduledTask -TaskName "Send Battery Data to Home Assistant" `
-                               -Action $action `
-                               -Trigger $triggers `
-                               -Settings $settings `
-                               -Description "Send battery data to Home Assistant every 5 minutes."
+        Register-ScheduledTask `
+            -TaskName 'Send Battery Data to Home Assistant' `
+            -Action $action `
+            -Trigger $triggers `
+            -Settings $settings `
+            -Description 'Send battery data to Home Assistant every 5 minutes.' `
+            -Force `
+            -ErrorAction Stop | Out-Null
+
         Write-Output "Scheduled task created successfully."
-        Write-Output "IMPORTANT: Update Task Scheduler settings as described in the script header."
     } catch {
-        Write-Error "Failed to create the scheduled task: $_"
-        return
+        Write-FatalError "Failed to create the scheduled task: $($_.Exception.Message)"
     }
 }
 
 function Install-ScheduledTaskEasy {
     param (
+        [Parameter(Mandatory = $true)]
         [string]$ScriptPath
     )
 
-    Write-Output "Starting scheduled task installation..."
-
-    # Task details
-    $TaskName = "Send Battery Data to Home Assistant"
-    $TaskDescription = "Send battery data to Home Assistant automatically."
-
-    # Ensure necessary privileges
-    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-        Write-Error "Administrator privileges are required to install the task."
-        return
+    if (-not (Test-IsAdministrator)) {
+        Write-FatalError "Administrator privileges are required to install the scheduled task."
     }
 
-    # Define the PowerShell execution arguments
-    $SensorAttributes = $SensorAttributes.Replace('"','"""') # Escape double-quotes for JSON handling
-    $TaskArguments = "-WindowStyle hidden -File `"$ScriptPath`" -HomeAssistantURL `"$HomeAssistantURL`" -HomeAssistantSensor `"$HomeAssistantSensor`" -HomeAssistantToken `"$HomeAssistantToken`" -SensorAttributes `"$SensorAttributes`""
+    Write-Output "Starting scheduled task installation..."
 
-    # Generate XML content dynamically for complex triggers
-    $TaskXml = @"
+    $taskName = 'Send Battery Data to Home Assistant'
+    $taskDescription = 'Send battery data to Home Assistant automatically.'
+    $taskArguments = New-EncodedTaskArguments -ScriptPath $ScriptPath
+    $startBoundary = Get-Date -Format 'yyyy-MM-ddT00:00:00'
+
+    $taskXml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>$TaskDescription</Description>
-    <URI>\$TaskName</URI>
+    <Description>$taskDescription</Description>
+    <URI>\$taskName</URI>
   </RegistrationInfo>
   <Triggers>
-    <!-- Runs the script every 5 minutes -->
     <CalendarTrigger>
       <Repetition>
         <Interval>PT5M</Interval>
         <Duration>P1D</Duration>
-        <StopAtDurationEnd>true</StopAtDurationEnd>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
-      <StartBoundary>$(Get-Date -Format "yyyy-MM-ddT00:00:00")</StartBoundary>
+      <StartBoundary>$startBoundary</StartBoundary>
       <Enabled>true</Enabled>
       <ScheduleByDay>
         <DaysInterval>1</DaysInterval>
       </ScheduleByDay>
     </CalendarTrigger>
-    <!-- Runs on startup -->
     <BootTrigger>
       <Enabled>true</Enabled>
     </BootTrigger>
-    <!-- Runs when waking from sleep -->
     <EventTrigger>
       <Enabled>true</Enabled>
       <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
     </EventTrigger>
-    <!-- Runs when AC power is disconnected -->
     <EventTrigger>
       <Enabled>true</Enabled>
       <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[(EventID=105)]] and *[System[Provider[@Name="Microsoft-Windows-Kernel-Power"]]] and *[EventData[Data[@Name="AcOnline"] and (Data='false')]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
     </EventTrigger>
-    <!-- Runs when AC power is reconnected -->
     <EventTrigger>
       <Enabled>true</Enabled>
       <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[(EventID=105)]] and *[System[Provider[@Name="Microsoft-Windows-Kernel-Power"]]] and *[EventData[Data[@Name="AcOnline"] and (Data='true')]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
@@ -334,13 +680,13 @@ function Install-ScheduledTaskEasy {
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>SYSTEM</UserId>
-      <LogonType>Password</LogonType>
+      <UserId>S-1-5-18</UserId>
+      <LogonType>ServiceAccount</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
   <Settings>
-   <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <AllowHardTerminate>true</AllowHardTerminate>
@@ -355,65 +701,89 @@ function Install-ScheduledTaskEasy {
   <Actions Context="Author">
     <Exec>
       <Command>powershell.exe</Command>
-      <Arguments>$TaskArguments</Arguments>
+      <Arguments>$taskArguments</Arguments>
     </Exec>
   </Actions>
 </Task>
 "@
 
-    # Save the XML file temporarily - encoded as UTF16 Little Endian as schtasks only accepts this 
-    $TaskXmlPath = "$env:TEMP\BatteryTask.xml"
-    $TaskXml | Out-File -FilePath $TaskXmlPath -Encoding Unicode
+    $taskXmlPath = Join-Path -Path $env:TEMP -ChildPath 'BatteryTask.xml'
+    $taskXml | Out-File -FilePath $taskXmlPath -Encoding Unicode
 
     try {
-        # Register the task using schtasks
-        schtasks /Create /TN "$TaskName" /XML "$TaskXmlPath" /F
-       
+        & schtasks.exe /Create /TN $taskName /XML $taskXmlPath /F
+        if ($LASTEXITCODE -ne 0) {
+            Write-FatalError "schtasks.exe failed with exit code $LASTEXITCODE."
+        }
+
         Write-Output "Scheduled task created successfully."
-        Write-Output "IMPORTANT: The script is now fully automated with event-based triggers."
     } catch {
-        Write-Error "Failed to create the scheduled task: $_"
+        Write-FatalError "Failed to create the scheduled task: $($_.Exception.Message)"
     } finally {
-        # Cleanup the temporary XML file
-        Remove-Item -Path $TaskXmlPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $taskXmlPath -Force -ErrorAction SilentlyContinue
     }
 }
 
+if (-not [string]::IsNullOrWhiteSpace($HomeAssistantSensor) -and -not $HomeAssistantSensor.StartsWith('sensor.')) {
+    $HomeAssistantSensor = "sensor.$HomeAssistantSensor"
+}
 
-# Main Execution Logic
+$useRest = -not [string]::IsNullOrWhiteSpace($HomeAssistantURL) -or
+    -not [string]::IsNullOrWhiteSpace($HomeAssistantSensor) -or
+    -not [string]::IsNullOrWhiteSpace($HomeAssistantToken)
+$useMqtt = -not [string]::IsNullOrWhiteSpace($MqttHost) -or
+    -not [string]::IsNullOrWhiteSpace($MqttTopic)
+
+if (-not $useRest -and -not $useMqtt) {
+    Write-FatalError "Configure either MQTT (-MqttHost and -MqttTopic) or REST (-HomeAssistantURL, -HomeAssistantSensor, and -HomeAssistantToken)."
+}
+
+if ($useRest) {
+    if ([string]::IsNullOrWhiteSpace($HomeAssistantURL) -or
+        [string]::IsNullOrWhiteSpace($HomeAssistantSensor) -or
+        [string]::IsNullOrWhiteSpace($HomeAssistantToken)) {
+        Write-FatalError "REST publishing requires -HomeAssistantURL, -HomeAssistantSensor, and -HomeAssistantToken."
+    }
+
+    $HomeAssistantURL = $HomeAssistantURL.TrimEnd('/')
+    $HomeAssistantAPIURL = "$HomeAssistantURL/api/states/$HomeAssistantSensor"
+}
+
+if ($useMqtt -and ([string]::IsNullOrWhiteSpace($MqttHost) -or [string]::IsNullOrWhiteSpace($MqttTopic))) {
+    Write-FatalError "MQTT publishing requires -MqttHost and -MqttTopic."
+}
+
+$additionalAttributes = ConvertFrom-SensorAttributesJson -Json $SensorAttributes
+
 if ($EasyInstall) {
     $scriptPath = $MyInvocation.MyCommand.Path
     Install-ScheduledTaskEasy -ScriptPath $scriptPath
     return
 }
-elseif ($Install) {
+
+if ($Install) {
     $scriptPath = $MyInvocation.MyCommand.Path
-    Install-ScheduledTask -ScriptPath $scriptPath
+    Install-ScheduledTaskClassic -ScriptPath $scriptPath
     return
 }
 
-# Validate the network connection only if NetworkSSID is provided
-if ($PSBoundParameters.ContainsKey('NetworkSSID') -and $NetworkSSID) {
-    $SSID = Get-NetConnectionProfile | Where-Object { $_.Name -eq $NetworkSSID }
-    if (-not $SSID) {
-        Write-Output "Not connected to SSID '$NetworkSSID'. Exiting."
+if (-not [string]::IsNullOrWhiteSpace($NetworkSSID)) {
+    if (-not (Test-NetworkMatch -ExpectedNetworkName $NetworkSSID)) {
+        Write-Output "Not connected to SSID or network profile '$NetworkSSID'. Exiting."
         return
     }
 }
 
-$batteryData = Get-WmiObject -Class Win32_Battery | Select-Object BatteryStatus, EstimatedChargeRemaining, EstimatedRunTime
-if ($batteryData) {
-    $battery_state = switch ($batteryData.BatteryStatus) {
-        1 { "discharging" }
-        2 { "charging" }
-        default { "unknown" }
-    }
-    Send-DataToHomeAssistant @{
-        status = $batteryData.BatteryStatus
-        battery_state = $battery_state
-        charge_percent = $batteryData.EstimatedChargeRemaining
-        time_remaining = $batteryData.EstimatedRunTime
-    }
-} else {
+$batteryData = Get-BatterySnapshot
+if ($null -eq $batteryData) {
     Write-Output "Battery information is not available."
+    return
+}
+
+if ($useMqtt) {
+    Publish-DataToMqtt -BatteryData $batteryData -AdditionalAttributes $additionalAttributes
+}
+
+if ($useRest) {
+    Send-DataToHomeAssistant -BatteryData $batteryData -AdditionalAttributes $additionalAttributes
 }
