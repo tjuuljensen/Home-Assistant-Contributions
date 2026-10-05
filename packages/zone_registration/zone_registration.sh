@@ -1,20 +1,46 @@
 #!/bin/bash
-# 
-# Torsten Juul-Jensen
-# Date: 28 September 2023
 #
-# The script is made for registering entries in a CSV file based on input from Home Assistant.
-# The file has the following fields:
-# - Date (in ISO 8601 date format)
-# - Minutes (numeric duration of time in zone)
-# - First (first time registration, in ISO 8601 timestamp format)
-# - Last (last time registration on record, in ISO 8601 timestamp format)
-# - Review (Y, N or blank)
-# - Entry (auto or manual)
-# - Comment
-# 
-# Subsequent updates with same date will overwrite contents of Minutes, Entry, Last, Review and Comment.
+# Purpose:
+#   Create, update, or delete a date-based zone-registration record in a
+#   semicolon-separated CSV file. The script is intended for calls from Home
+#   Assistant, but can also be used directly from a Bash shell.
 #
+# Behavior:
+#   - Creates the target file with a header when it does not exist.
+#   - Updates the Minutes, Last, Review, and Comment fields for an existing date.
+#   - Appends a new record with the current time when the date is not present.
+#   - Removes all records matching --delete DATE when deletion is requested.
+#   - Keeps the existing CSV format and does not create backups.
+#
+# Usage:
+#   zone_registration.sh [options] FILENAME
+#   zone_registration.sh --delete DATE [options] FILENAME
+#
+# Options:
+#   -e, --entry MODE       Entry mode: auto or manual (default: manual).
+#   -t, --minutes VALUE    Duration in minutes (default: 0).
+#   -f, --date DATE        Record date (default: today).
+#   -r, --review VALUE     Review status: Y or N (default: empty).
+#   -c, --comment TEXT     Record comment (default: empty).
+#   -d, --directory DIR    Directory containing FILENAME (default: current).
+#       --delete DATE      Remove records for DATE instead of updating.
+#   -h, --help             Display usage information.
+#
+# CSV columns:
+#   Date;Minutes;First;Last;Review;Entry;Comment
+#
+# Inputs / environment:
+#   - FILENAME is the target CSV file name or path.
+#   - DATE values must be accepted by GNU date -d.
+#   - No environment variables are required or read.
+#
+# Outputs / side effects:
+#   - Writes the target CSV file in place through a temporary file.
+#   - Requires write access to the target directory.
+#   - Uses the local system date and time for default and new-record values.
+#
+# Prerequisites:
+#   Bash, GNU date, realpath, mktemp, awk, and a writable target directory.
 
 
 # Default values for arguments
@@ -50,6 +76,7 @@ if [[ ${ARGS_NUM} -eq 0 ]]; then
   echo "Error: No arguments given. Filename must be given."
   exit 1
 fi
+
 
 
 # Parse optional arguments
@@ -173,6 +200,4 @@ else
   # Update CSV file
   awk -v DATE="${DATE}" -v TIME="${TIME}" -v MINUTES="${MINUTES}" -v ENTRY="${ENTRY}" -v REVIEW="${REVIEW}" -v COMMENT="${COMMENT}" -F';' 'BEGIN{OFS=";"} $1==DATE {$2=MINUTES; $4=TIME; $5=REVIEW; $7=COMMENT; found=1} {print} END{if (!found) print DATE ";" MINUTES ";" TIME ";" TIME ";" REVIEW ";" ENTRY ";" COMMENT}' "$FILENAME" >  "$TMP_FILE" && mv "$TMP_FILE" "$FILENAME"
 fi
-
-
 
