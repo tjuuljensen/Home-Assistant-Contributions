@@ -1,7 +1,9 @@
 
 # Home Assistant Contributions
 
-A collection of my  [Home Assistant](https://www.home-assistant.io/) packages and blueprints. These resources aim to simplify tasks and to enable functions not otherwise available in a Home Asistant setup.
+A collection of my [Home Assistant](https://www.home-assistant.io/) packages,
+blueprints, and helper scripts. These resources simplify configuration and
+maintenance tasks.
 
 ## Table of Contents
 
@@ -18,6 +20,7 @@ A collection of my  [Home Assistant](https://www.home-assistant.io/) packages an
     - [Package: Battery Alert](#package-battery-alert)
     - [Package: Zone Registration](#package-zone-registration)
     - [Garmin LiveTrack integration (external, testing)](#garmin-livetrack-integration-external-testing)
+  - [Python Helpers](#python-helpers)
   - [Installation \& Usage](#installation--usage)
   - [Contributing](#contributing)
   - [License](#license)
@@ -129,6 +132,45 @@ instructions.
   repository is being validated.
 
 ---
+
+## Python Helpers
+
+| Script | Purpose | Requirements |
+| --- | --- | --- |
+| [set_state.py](python_scripts/set_state.py) | Update an existing entity's state/attributes or remove one attribute with `delete_attribute` | Home Assistant's `python_script` integration |
+| [export-button-card-templates.py](utils/export-button-card-templates.py) | Export templates from Lovelace YAML and dashboard storage, together or in connected groups | Python 3.10+ and PyYAML |
+| [hass-backup-unpack.py](utils/hass-backup-unpack.py) | List backup members or explicitly extract selected nested archives | Python 3.10+; `securetar` for extraction |
+| [find-unused-sensors.py](utils/find-unused-sensors.py) | Report sensor definitions that lack static references | Python 3.10+ and PyYAML |
+
+For `set_state.py`, copy the file to `/config/python_scripts/set_state.py`,
+enable `python_script:` in `configuration.yaml`, and restart Home Assistant
+when enabling the integration for the first time. Reload Python scripts when
+adding a file to an already enabled integration. Call `python_script.set_state`
+with `entity_id` and optional `state`, attribute updates, or
+`delete_attribute: <attribute-name>`. Its header contains input examples.
+Integration-owned attributes may return on the next integration update.
+
+The utilities run from a terminal on Windows or Linux. Install PyYAML in your
+chosen Python environment (`python -m pip install PyYAML`); install `securetar`
+only when extracting backups (`python -m pip install securetar`). From this
+repository root, start with:
+
+```text
+python utils/export-button-card-templates.py --help
+python utils/hass-backup-unpack.py --help
+python utils/find-unused-sensors.py --help
+```
+
+Select your own config root or backup path rather than running against this
+contributions checkout. Exports and extracted backups may contain private
+configuration or credentials; keep generated output outside this public repo.
+Unused-sensor findings require review because dynamic references cannot be
+proven by static analysis.
+
+These files are published from HomeAssistantConfig through its allowlisted
+publisher. Maintainer changes belong in that source first, then in a new
+publication batch. The unused-sensor analyzer retains its original upstream
+attribution in the script header.
 
 ## Installation & Usage
 

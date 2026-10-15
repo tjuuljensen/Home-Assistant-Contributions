@@ -16,6 +16,8 @@
 !packages/pollen_denmark/images/
 !packages/zone_registration/
 !lovelace/
+!python_scripts/
+!utils/
 
 !*.yaml
 !*.md
