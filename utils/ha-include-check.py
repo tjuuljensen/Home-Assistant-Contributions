@@ -48,10 +48,10 @@ Author:
     Torsten Juul-Jensen
 
 Ownership / deployment:
-    HomeAssistantConfig/utils/ha-include-check.py is the maintained source.
-    Git-sync and deployment helpers invoke this read-only check. The runtime
-    copy is /config/utils/ha-include-check.py, distributed with the config repo.
-    See docs/runbooks/git-workflow.md for deployment and Core validation.
+    Maintained as utils/ha-include-check.py in the source configuration.
+    Publication and deployment workflows distribute this read-only helper.
+    For a Home Assistant shell, install it as /config/utils/ha-include-check.py.
+    Run Home Assistant's own configuration check before reloading or restarting.
 
 Version:
     1.0.0

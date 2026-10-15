@@ -92,7 +92,6 @@ if [[ "${1}" == "-v" || "${1}" == "--version" ]]; then
 fi
 
 
-
 # Parse optional arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -218,3 +217,6 @@ else
   # Update CSV file
   awk -v DATE="${DATE}" -v TIME="${TIME}" -v MINUTES="${MINUTES}" -v ENTRY="${ENTRY}" -v REVIEW="${REVIEW}" -v COMMENT="${COMMENT}" -F';' 'BEGIN{OFS=";"} $1==DATE {$2=MINUTES; $4=TIME; $5=REVIEW; $7=COMMENT; found=1} {print} END{if (!found) print DATE ";" MINUTES ";" TIME ";" TIME ";" REVIEW ";" ENTRY ";" COMMENT}' "$FILENAME" >  "$TMP_FILE" && mv "$TMP_FILE" "$FILENAME"
 fi
+
+
+

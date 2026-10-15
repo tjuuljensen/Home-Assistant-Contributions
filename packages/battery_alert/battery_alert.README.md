@@ -4,6 +4,8 @@ Active - version 3.0.0
 
 Runtime package path: `/config/packages/battery_alert.yaml`
 
+Required companion template: `/config/custom_templates/battery_alert.jinja`
+
 ## Purpose
 
 The package discovers battery sensors directly from Home Assistant's entity

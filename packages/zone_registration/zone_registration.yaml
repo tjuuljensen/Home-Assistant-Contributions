@@ -407,10 +407,12 @@ shell_command:
 
 command_line:
 
-  # Working: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:7]) | map({month: .[0].date[0:7], days: length})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0]}) | group_by(.date[0:4]) | map({year: .[0].date[0:4], days: length}))}' /config/www/csv/work_2023.csv"
+  # Read-only statistics helper; errors retain the empty-array fallback.
   - sensor:
       name: Zone registration statistics
-      command: "jq -Rs '{\"monthly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], month: .[0][0:7], year: .[0][0:4], days: length}) | group_by(.month) | map({month: .[0].month, date: (.[0].date[0:7] + \"-01\"), days: length, year: .[0].year})), \"yearly\": (split(\"\\n\")[1:-1] | map(split(\";\")) | map({date: .[0], year: .[0][0:4], days: length}) | group_by(.year) | map({year: .[0].year, days: length}))}' /config/www/csv/{{ states('sensor.zone_registration_filename') if states('sensor.zone_registration_filename') not in ['unknown','unavailable','none','', none, 'unknown.csv'] else 'zone_registration.csv' }} 2>/dev/null || echo '{\"monthly\":[],\"yearly\":[]}'"
+      unique_id: zone_registration_statistics
+      command: >-
+        python3 /config/utils/zone-registration-statistics.py --file "/config/www/csv/{{ states('sensor.zone_registration_filename') if states('sensor.zone_registration_filename') not in ['unknown','unavailable','none','', none, 'unknown.csv'] else 'zone_registration.csv' }}"
       availability: >
         {% set filename = states('sensor.zone_registration_filename') %}
         {{ filename not in ['unknown','unavailable','none','', none, 'unknown.csv'] }}

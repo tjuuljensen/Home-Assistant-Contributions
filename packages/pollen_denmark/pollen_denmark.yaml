@@ -691,6 +691,8 @@ template:
       event_type: event_template_reloaded
   sensor:
     - name: "Pollen Timestamp Start of Today"
+      unique_id: pollen_timestamp_start_of_today
+      default_entity_id: sensor.pollen_timestamp_start_of_today
       icon: mdi:clock-time-twelve
       unit_of_measurement: "seconds"
       state: >
@@ -700,6 +702,8 @@ template:
 - binary_sensor:
 
     - name: "Pollen Updated Today"
+      unique_id: pollen_updated_today
+      default_entity_id: binary_sensor.pollen_updated_today
       icon: mdi:flower-pollen-outline
       state: |
         {{ states('sensor.pollen_update_time') | as_timestamp() > states('sensor.pollen_timestamp_start_of_today') | float(0) }}
@@ -711,6 +715,8 @@ template:
       
     # Region specific sensor which holds information about the pollen levels of the region chosen in the input select pollen region sensor.
     - name: "Pollen in the Air"
+      unique_id: pollen_in_the_air
+      default_entity_id: binary_sensor.pollen_in_the_air
       state: >
         {%- set region_selector_suffix = iif(this.attributes.pollen_region == 'Øst','_ost','_vest') %}
         {%- set region_entities = states.sensor | selectattr('entity_id','match','^sensor(.)pollen.*'+region_selector_suffix) | selectattr('attributes.pollen_name', 'defined') | selectattr('attributes.in_season','eq', true) | map(attribute='entity_id') | list %}
@@ -764,6 +770,8 @@ template:
 
   ### El
   - name: "Pollen El Øst"
+    unique_id: pollen_alder_east
+    default_entity_id: sensor.pollen_el_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_el_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -850,6 +858,8 @@ template:
 
   ### Hassel
   - name: "Pollen Hassel Øst"
+    unique_id: pollen_hazel_east
+    default_entity_id: sensor.pollen_hassel_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_hassel_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -936,6 +946,8 @@ template:
 
   ### Elm
   - name: "Pollen Elm Øst"
+    unique_id: pollen_elm_east
+    default_entity_id: sensor.pollen_elm_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_elm_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1022,6 +1034,8 @@ template:
 
   ### Birk
   - name: "Pollen Birk Øst"
+    unique_id: pollen_birch_east
+    default_entity_id: sensor.pollen_birk_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_birk_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1109,6 +1123,8 @@ template:
 
   ### Græs
   - name: "Pollen Græs Øst"
+    unique_id: pollen_grass_east
+    default_entity_id: sensor.pollen_graes_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_graes_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1195,6 +1211,8 @@ template:
 
   ### Bynke
   - name: "Pollen Bynke Øst"
+    unique_id: pollen_mugwort_east
+    default_entity_id: sensor.pollen_bynke_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_bynke_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1282,6 +1300,8 @@ template:
 
   ### Alternaria
   - name: "Pollen Alternaria Øst"
+    unique_id: pollen_alternaria_east
+    default_entity_id: sensor.pollen_alternaria_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_alternaria_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1369,6 +1389,8 @@ template:
 
   ### Cladosporium
   - name: "Pollen Cladosporium Øst"
+    unique_id: pollen_cladosporium_east
+    default_entity_id: sensor.pollen_cladosporium_ost
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_cladosporium_ost_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1459,6 +1481,8 @@ template:
 
   ### El
   - name: "Pollen El Vest"
+    unique_id: pollen_alder_west
+    default_entity_id: sensor.pollen_el_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_el_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1545,6 +1569,8 @@ template:
 
   ### Hassel
   - name: "Pollen Hassel Vest"
+    unique_id: pollen_hazel_west
+    default_entity_id: sensor.pollen_hassel_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_hassel_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1631,6 +1657,8 @@ template:
 
   ### Elm
   - name: "Pollen Elm Vest"
+    unique_id: pollen_elm_west
+    default_entity_id: sensor.pollen_elm_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_elm_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1717,6 +1745,8 @@ template:
 
   ### Birk
   - name: "Pollen Birk Vest"
+    unique_id: pollen_birch_west
+    default_entity_id: sensor.pollen_birk_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_birk_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1804,6 +1834,8 @@ template:
 
   ### Græs
   - name: "Pollen Græs Vest"
+    unique_id: pollen_grass_west
+    default_entity_id: sensor.pollen_graes_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_graes_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1890,6 +1922,8 @@ template:
 
   ### Bynke
   - name: "Pollen Bynke Vest"
+    unique_id: pollen_mugwort_west
+    default_entity_id: sensor.pollen_bynke_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_bynke_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -1977,6 +2011,8 @@ template:
 
   ### Alternaria
   - name: "Pollen Alternaria Vest"
+    unique_id: pollen_alternaria_west
+    default_entity_id: sensor.pollen_alternaria_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_alternaria_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -2064,6 +2100,8 @@ template:
 
   ### Cladosporium
   - name: "Pollen Cladosporium Vest"
+    unique_id: pollen_cladosporium_west
+    default_entity_id: sensor.pollen_cladosporium_vest
     icon: mdi:flower-pollen
     state: >
       {{ (states('sensor.pollen_cladosporium_vest_rest') | from_json).level | int(0) | default(-1) }} 
@@ -2160,6 +2198,7 @@ rest:
   sensor:
     # Update time - when the pollen data was updated
     - name: "Pollen Update Time"
+      unique_id: pollen_update_time
       icon: mdi:timeline-clock
       value_template: >
         {{ (value_json | from_json).updateTime | as_datetime | as_local }}
@@ -2167,6 +2206,7 @@ rest:
 
     # When the feed was last fetched
     - name: "Pollen Feed Last Fetched"
+      unique_id: pollen_feed_last_fetched
       icon: mdi:timeline-clock-outline
       value_template: >
         {{ now() }}
@@ -2178,6 +2218,7 @@ rest:
 
     # El
     - name: "Pollen El Øst REST"
+      unique_id: pollen_alder_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2205,6 +2246,7 @@ rest:
 
     # Hassel 
     - name: "Pollen Hassel Øst REST"
+      unique_id: pollen_hazel_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2232,6 +2274,7 @@ rest:
 
     # Elm 
     - name: "Pollen Elm Øst REST"
+      unique_id: pollen_elm_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2259,6 +2302,7 @@ rest:
 
     # Birk 
     - name: "Pollen Birk Øst REST"
+      unique_id: pollen_birch_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2286,6 +2330,7 @@ rest:
 
     # Græs 
     - name: "Pollen Græs Øst REST"
+      unique_id: pollen_grass_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2313,6 +2358,7 @@ rest:
 
     # Bynke 
     - name: "Pollen Bynke Øst REST"
+      unique_id: pollen_mugwort_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2340,6 +2386,7 @@ rest:
 
     # Alternaria 
     - name: "Pollen Alternaria Øst REST"
+      unique_id: pollen_alternaria_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2367,6 +2414,7 @@ rest:
 
     # Cladosporium 
     - name: "Pollen Cladosporium Øst REST"
+      unique_id: pollen_cladosporium_east_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '48' %}
@@ -2398,6 +2446,7 @@ rest:
 
     # El
     - name: "Pollen El Vest REST"
+      unique_id: pollen_alder_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2425,6 +2474,7 @@ rest:
 
     # Hassel 
     - name: "Pollen Hassel Vest REST"
+      unique_id: pollen_hazel_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2452,6 +2502,7 @@ rest:
 
     # Elm 
     - name: "Pollen Elm Vest REST"
+      unique_id: pollen_elm_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2479,6 +2530,7 @@ rest:
 
     # Birk 
     - name: "Pollen Birk Vest REST"
+      unique_id: pollen_birch_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2506,6 +2558,7 @@ rest:
 
     # Græs 
     - name: "Pollen Græs Vest REST"
+      unique_id: pollen_grass_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2533,6 +2586,7 @@ rest:
 
     # Bynke 
     - name: "Pollen Bynke Vest REST"
+      unique_id: pollen_mugwort_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2560,6 +2614,7 @@ rest:
 
     # Alternaria 
     - name: "Pollen Alternaria Vest REST"
+      unique_id: pollen_alternaria_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}
@@ -2587,6 +2642,7 @@ rest:
 
     # Cladosporium 
     - name: "Pollen Cladosporium Vest REST"
+      unique_id: pollen_cladosporium_west_rest
       icon: mdi:flower-pollen-outline
       value_template: >
         {% set region = '49' %}

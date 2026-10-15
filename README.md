@@ -268,12 +268,12 @@ proven by static analysis.
 
 The exporter, backup unpacker, unused-sensor analyzer, include checker,
 and `set_state.py` are
-published from HomeAssistantConfig through its allowlisted publisher. Maintainer
+published from the maintained source repository through its allowlisted publisher. Maintainer
 changes to those files belong in that source first, then in a new publication
 batch. The unused-sensor analyzer retains its original upstream
 attribution in the script header.
 
-ODIN publication runs from HomeAssistantConfig. Its publisher anonymizes the
+ODIN publication runs from the maintained source repository. Its publisher anonymizes the
 ODIN files with a private map, checks the prepared output, and blocks publication
 on validation failures. The anonymizer, its tests, and the map stay in that
 source repository; none is required to install or run ODIN.

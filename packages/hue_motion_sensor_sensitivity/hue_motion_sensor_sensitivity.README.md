@@ -64,7 +64,69 @@ Automations:
 
 - Multi-hub storage is limited by `input_text` size and practical JSON length.
 - Selector logic is now restricted to entities from the Hue integration to avoid non-Hue presence sensors.
-- `curl` and `jq` must be available in the Home Assistant runtime used by `command_line` and `shell_command`.
+- Python 3 and the local Supervisor Core API Unix socket are required for the
+  command-line reader. `curl` is still required by the unchanged write and
+  registration shell commands.
+
+## Hub Data Reader
+
+Deploy `/config/utils/hue-motion-sensor-hub-data.py` with the package. The
+standard-library reader replaces only the templated `curl | jq` sensor command,
+so it does not depend on shell parsing or bypass Command line's secure argument
+execution. The non-secret device name uses
+[`base64_encode`](https://www.home-assistant.io/template-functions/base64_encode/) to preserve quotes,
+Unicode, and shell metacharacters as literal data. The template also lets Core
+clear this sensor's repair on the next update.
+
+The reader gets the current `input_text.hue_hub_ip` and
+`input_text.hue_hub_username` through the Unix socket specified by Core's
+`SUPERVISOR_CORE_API_SOCKET` environment variable. It uses two read-only
+`GET /api/states/<entity_id>` requests. The protected socket already provides
+authentication; no new token, credential file, helper, or restore-state snapshot
+is needed. Credentials stay out of command arguments and diagnostics.
+This requires a Supervisor-managed Core runtime with its API socket. We cannot
+verify statically whether the socket is available on this installation. The
+mechanism is present in
+[Core 2026.10 socket setup](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/http/__init__.py)
+and [socket authentication](https://github.com/home-assistant/core/blob/2026.10.0/homeassistant/components/http/auth.py).
+
+The bridge request remains `GET https://<bridge>/api/<username>/sensors/` with
+the existing self-signed certificate compatibility of `curl --insecure`.
+Redirects are not followed, matching the previous curl command. Only this bridge
+connection disables certificate verification. Full device data is merged with
+`device_id`, `sensitivity`, `sensitivitymax`, and `on`; absent config fields remain
+JSON null. The sensor's existing state template and attribute list are unchanged.
+
+| Input or trigger | Preserved behavior |
+| --- | --- |
+| Exact device-name match | Compact JSON, including nested config/state and existing attributes |
+| No match, Hue API error list, empty response, bridge transport failure | Empty stdout, exit zero, matching the former pipeline without pipefail |
+| Invalid JSON or malformed sensor data | Nonzero exit without a successful payload; sanitized diagnostic |
+| Duplicate device names | Multiple JSON lines, retaining the previous ambiguous output rather than choosing a device |
+| Startup, selection, hub discovery, sensitivity write | Existing refresh actions and helper behavior |
+| Availability and scheduled polling | Existing availability template and 30-day scan interval |
+
+Local helper/API failures exit nonzero without exposing response bodies. Each
+local read has a 2-second timeout and the bridge has a 10-second timeout. The
+unchanged 15-second Command line timeout still bounds the entire process.
+Home Assistant remains responsible
+for its sensor state and attribute handling on empty/failed output.
+
+Windows validation uses mocked transports:
+
+```powershell
+python -m unittest discover -s utils/tests -p test_hue_motion_sensor_hub_data.py
+python utils/hue-motion-sensor-hub-data.py --help
+python utils/hue-motion-sensor-hub-data.py --version
+```
+
+After an authorized deployment, reload Command line or restart Core, then refresh
+`sensor.hue_motion_sensor_hub_data`. Verify the live socket is available in the
+Core container, the selected device ID and attributes are correct, both hub
+selections still work, and the repair clears after the update. Do not infer
+current repair status from saved repair records. We cannot verify statically
+the live network/API behavior. Rollback restores the previous package command; it
+requires `curl` and `jq` and restores the pending 2027.4 incompatibility.
 
 ## Suggested Lovelace Layout
 

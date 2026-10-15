@@ -77,7 +77,7 @@ After editing `/config/custom_templates/odin.jinja`, reload custom templates fro
 
 ## Publication provenance
 
-HomeAssistantConfig owns the source package and runs anonymization and
+The maintained source repository owns the package and runs anonymization and
 protected-content checks before publishing this example. Its private replacement
 map, anonymizer, and tests stay in that source repository. Failed checks block
 publication. This installation guide is maintained here; the generated reference

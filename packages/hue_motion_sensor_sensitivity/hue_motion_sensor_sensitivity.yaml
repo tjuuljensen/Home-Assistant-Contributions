@@ -7,6 +7,11 @@
 ## Changelog
 ################################################
 #
+# 1.1.1 (2026-10-09)
+#   Changed
+#   - Replaced the templated curl/jq sensor pipeline with a Python reader.
+#   - Read live hub credentials through the local Core API Unix socket.
+#
 # 1.1.0 (2026-04-22)
 #   Changed
 #   - Fixed stale script entity references in package comments/groups.
@@ -59,7 +64,7 @@
 ################################################ 
 ## Installation
 ################################################
-# 1. Place this package file in your /config/packages/ directory.
+# 1. Place this package file in /config/packages/ and its Python reader in /config/utils/.
 # 2. Restart your Home Assistant instance to load the package file.
 # 3. Optional: Add Entity cards to your Lovelace interface to access package options
 # 4. Enter your Hue hub IP address in the field input_text.hue_hub_ip
@@ -204,7 +209,11 @@ command_line:
     
   - sensor:
       name: Hue Motion Sensor Hub Data
-      command: 'curl --insecure -X GET https://{{ states("input_text.hue_hub_ip") }}/api/{{ states("input_text.hue_hub_username") }}/sensors/ | jq -c ''to_entries[] | select(.value.name=="{{ states("sensor.hue_motion_sensor_device_name") }}") | {"device_id" : .key} + .value + {"sensitivity" : .value.config.sensitivity} + {"sensitivitymax" : .value.config.sensitivitymax}+ {"on" : .value.config.on}'''
+      unique_id: hue_motion_sensor_hub_data
+      # Only the non-secret device name enters argv; credentials stay in the reader.
+      command: >-
+        python3 /config/utils/hue-motion-sensor-hub-data.py
+        --device-name-b64 '{{ states("sensor.hue_motion_sensor_device_name") | base64_encode }}'
       value_template: "{{ value_json.device_id }}"
       availability: "{{ states('input_text.hue_hub_ip') not in ['unknown','unavailable', none] and states('sensor.hue_motion_sensor_device_name') not in ['unknown','unavailable', none]}}"
       scan_interval: 2592000 # 30 days
