@@ -1,0 +1,438 @@
+################################################################################
+# ODIN Feedparser Package for Home Assistant
+################################################################################
+#
+# Public example: replacement locations; see the companion README.
+#
+# Purpose
+# -------
+# This package consumes ODIN RSS feeds from odin.dk using the Feedparser custom
+# integration and exposes normalized summary sensors for selected fire stations.
+#
+# The summary sensors are intended for:
+#
+#   - dashboard badges
+#   - Markdown cards
+#   - conditional cards
+#   - alerting logic
+#   - simple incident count/state visualization
+#
+#
+# Entities created
+# ----------------
+# Feedparser source sensors:
+#
+#   sensor.odin_ostjyllands_brandvaesen_feed
+#   sensor.odin_beredskab_fyn_feed
+#
+# Normalized template sensors:
+#
+#   sensor.odin_ostjyllands_brandvaesen_feed_summary
+#   sensor.odin_beredskab_fyn_odense_feed_summary
+#
+# Manual rapid polling:
+#
+#   input_number.odin_rapid_poll_duration_minutes
+#   button.odin_ostjylland_start_rapid_polling
+#   button.odin_fyn_start_rapid_polling
+#   binary_sensor.odin_ostjylland_aarhus_rapid_polling
+#   binary_sensor.odin_fyn_odense_rapid_polling
+#   script.odin_rapid_poll_until_new_data
+#
+#
+# Requirements
+# ------------
+# - Feedparser custom integration installed and working (https://github.com/custom-components/feedparser).
+# - The custom template macro file:
+#
+#     config/custom_templates/odin.jinja
+#
+#
+# Reload after changes
+# --------------------
+# After changing this package:
+#
+#   Settings → System → Restart Home Assistant
+#
+# Or reload YAML/template entities where applicable.
+#
+# After changing custom_templates/odin.jinja:
+#
+#   Developer Tools → YAML → Reload custom templates
+#
+# Or call:
+#
+#   action: homeassistant.reload_custom_templates
+#
+#
+# Dashboard card example
+# ----------------------
+# type: markdown
+# content: >-
+#   {#
+#    # Configure the card like this:
+#    #
+#    # header: Title of page if string is not empty.
+#    # station: The stations(s) to display. Multiple entries can be delimited with a pipe, ex.: 'Aarhus|Skanderborg'
+#    # odin_entity: Feedparser entity. Expects date formatting: '%Y-%m-%d %H:%M:%S%z'
+#    # remove_station: Remove station name from report text.
+#    # hours_cutoff: How many hours to display.
+#    #}
+#   {% from 'odin.jinja' import odin_icon, odin_incident_regex %}
+#
+#   {% set header = 'Østjyllands Brandvæsen: Aarhus 🚨' %}
+#   {% set station = 'Aarhus' %}
+#   {% set odin_entity = 'sensor.odin_ostjyllands_brandvaesen_feed' %}
+#   {% set remove_station = true %}
+#   {% set hours_cutoff = 48 %}
+#
+#   {% set entries = state_attr(odin_entity, 'entries') or [] %}
+#   {% set cutoff_ts = as_timestamp(now() - timedelta(hours=hours_cutoff)) %}
+#   {% set title = header if header != '' else (entries[0].title ~ ': ' ~ station if entries | count > 0 else station) %}
+#
+#   {% set ns = namespace(filtered=[]) %}
+#   {% for e in entries %}
+#     {% set summary = e.summary | default('', true) %}
+#     {% set published_ts = e.published | default('', true) | as_timestamp(0) %}
+#     {% if published_ts > cutoff_ts
+#           and summary is search('(?i)' ~ station)
+#           and summary is search('(?i)(' ~ odin_incident_regex() ~ ')') %}
+#       {% set ns.filtered = ns.filtered + [e] %}
+#     {% endif %}
+#   {% endfor %}
+#
+#   ## {{ title }}
+#
+#   {% if ns.filtered | length > 0 %}
+#   <table>
+#     <thead>
+#       <tr>
+#         <th align="left">Time</th>
+#         <th align="center"></th>
+#         <th align="left">First Report</th>
+#       </tr>
+#     </thead>
+#     <tbody>
+#   {% for e in ns.filtered %}
+#       {% set summary = e.summary | default('', true) %}
+#       {% set report = summary %}
+#       {% if remove_station %}
+#         {% set report = report.rsplit('Station:', 1)[0] | trim %}
+#       {% endif %}
+#       {% if 'Førstemelding:' in report %}
+#         {% set report = report.rsplit('Førstemelding:', 1)[1] | trim %}
+#       {% endif %}
+#       <tr>
+#         <td>{{ (e.published | as_datetime).strftime('%a %H:%M') }}</td>
+#         <td>{{ odin_icon(summary) }}</td>
+#         <td>{{ report }}</td>
+#       </tr>
+#   {% endfor %}
+#     </tbody>
+#   </table>
+#   {% else %}
+#   _No events in the last {{ hours_cutoff }} hours._
+#   {% endif %}
+#
+#   Source: [Beredskabsstyrelsen](http://www.odin.dk/112puls/ "ODIN - Online Dataregistrerings- og INdberetningssystem")
+#
+################################################################################
+
+################################################################################
+# Manual rapid polling
+################################################################################
+
+input_number:
+  odin_rapid_poll_duration_minutes:
+    name: ODIN rapid poll duration
+    icon: mdi:timer-cog-outline
+    min: 1
+    max: 60
+    step: 1
+    mode: box
+    unit_of_measurement: "minutes"
+    initial: 15
+
+timer:
+  odin_ostjylland_aarhus_rapid_poll_window:
+    name: ODIN Østjylland/Aarhus rapid poll window
+    icon: mdi:timer-outline
+    restore: false
+
+  odin_fyn_odense_rapid_poll_window:
+    name: ODIN Fyn/Odense rapid poll window
+    icon: mdi:timer-outline
+    restore: false
+
+script:
+  odin_rapid_poll_until_new_data:
+    alias: "ODIN - Poll rapidly until new data"
+    description: >-
+      Poll an ODIN feed every 15 seconds until a new incident matches the
+      selected station and filters, or the configured rapid-poll duration
+      expires. Up to two feeds can be polled concurrently. The script state is
+      on while at least one polling run is active.
+    icon: mdi:fire-extinguisher
+    mode: parallel
+    max: 2
+    fields:
+      feed_entity:
+        name: ODIN feed
+        description: Feedparser sensor to poll for new entries.
+        required: true
+        default: sensor.odin_ostjyllands_brandvaesen_feed
+        selector:
+          select:
+            options:
+              - label: Østjyllands Brandvæsen
+                value: sensor.odin_ostjyllands_brandvaesen_feed
+              - label: Beredskab Fyn
+                value: sensor.odin_beredskab_fyn_feed
+      station:
+        name: Station
+        description: Station name or regular expression that a report must match.
+        required: true
+        default: Aarhus
+        selector:
+          text:
+      hours_cutoff:
+        name: Hours cutoff
+        description: Only treat matching incidents within this many hours as new data.
+        required: true
+        default: 48
+        selector:
+          number:
+            min: 1
+            max: 168
+            step: 1
+            unit_of_measurement: hours
+            mode: box
+      exclude_report_regex:
+        name: Exclude reports
+        description: Optional regular expression for otherwise matching reports to ignore.
+        required: false
+        default: ""
+        selector:
+          text:
+    sequence:
+      - variables:
+          target_feed_entity: >-
+            {{ feed_entity | default('sensor.odin_ostjyllands_brandvaesen_feed', true) }}
+          target_station: "{{ station | default('Aarhus', true) }}"
+          target_hours_cutoff: "{{ hours_cutoff | default(48, true) | float(48) }}"
+          target_exclude_report_regex: "{{ exclude_report_regex | default('', true) }}"
+          target_timeout_minutes: >-
+            {{ states('input_number.odin_rapid_poll_duration_minutes') | int(15) }}
+          target_poll_timer: >-
+            {{ 'timer.odin_fyn_odense_rapid_poll_window'
+               if target_feed_entity == 'sensor.odin_beredskab_fyn_feed'
+               else 'timer.odin_ostjylland_aarhus_rapid_poll_window' }}
+
+      - variables:
+          timeout_at: >-
+            {{ as_timestamp(now()) + ((target_timeout_minutes | int(15)) * 60) }}
+          target_timer_duration: >-
+            {% set total_seconds = (target_timeout_minutes | int(15)) * 60 %}
+            {{ '%02d:%02d:%02d' | format(total_seconds // 3600,
+                                         (total_seconds % 3600) // 60,
+                                         total_seconds % 60) }}
+          initial_relevant_event_keys: >-
+            {% from 'odin.jinja' import odin_event_keys %}
+            {{ odin_event_keys(target_feed_entity, target_station,
+                               target_hours_cutoff,
+                               target_exclude_report_regex) }}
+
+      - action: timer.cancel
+        target:
+          entity_id: "{{ target_poll_timer }}"
+
+      - action: timer.start
+        target:
+          entity_id: "{{ target_poll_timer }}"
+        data:
+          duration: "{{ target_timer_duration }}"
+
+      - repeat:
+          sequence:
+            - action: homeassistant.update_entity
+              target:
+                entity_id: "{{ target_feed_entity }}"
+
+            - delay:
+                seconds: 15
+
+          until:
+            - condition: or
+              conditions:
+                - condition: template
+                  alias: "The selected ODIN feed contains a new matching incident"
+                  value_template: >-
+                    {% from 'odin.jinja' import odin_has_new_event %}
+                    {{ odin_has_new_event(target_feed_entity, target_station,
+                                          target_hours_cutoff,
+                                          initial_relevant_event_keys,
+                                          target_exclude_report_regex) | bool(false) }}
+
+                - condition: template
+                  alias: "Rapid polling timeout reached"
+                  value_template: >-
+                    {{ is_state(target_poll_timer, 'idle')
+                       or as_timestamp(now()) >= (timeout_at | float(0)) }}
+
+      - action: timer.cancel
+        target:
+          entity_id: "{{ target_poll_timer }}"
+
+################################################################################
+# Normalized ODIN sensors
+################################################################################
+
+template:
+  - binary_sensor:
+      - name: "ODIN Østjylland Aarhus Rapid Polling"
+        unique_id: odin_ostjylland_aarhus_rapid_polling
+        device_class: running
+        icon: mdi:progress-clock
+        state: >-
+          {{ is_state('script.odin_rapid_poll_until_new_data', 'on')
+             and is_state('timer.odin_ostjylland_aarhus_rapid_poll_window', 'active') }}
+        attributes:
+          feed_entity: sensor.odin_ostjyllands_brandvaesen_feed
+          station: Aarhus
+          configured_window_minutes: >-
+            {{ states('input_number.odin_rapid_poll_duration_minutes') | int(15) }}
+          window_finishes_at: >-
+            {{ state_attr('timer.odin_ostjylland_aarhus_rapid_poll_window', 'finishes_at') }}
+
+      - name: "ODIN Fyn Odense Rapid Polling"
+        unique_id: odin_fyn_odense_rapid_polling
+        device_class: running
+        icon: mdi:progress-clock
+        state: >-
+          {{ is_state('script.odin_rapid_poll_until_new_data', 'on')
+             and is_state('timer.odin_fyn_odense_rapid_poll_window', 'active') }}
+        attributes:
+          feed_entity: sensor.odin_beredskab_fyn_feed
+          station: Odense
+          configured_window_minutes: >-
+            {{ states('input_number.odin_rapid_poll_duration_minutes') | int(15) }}
+          window_finishes_at: >-
+            {{ state_attr('timer.odin_fyn_odense_rapid_poll_window', 'finishes_at') }}
+
+  - button:
+      - name: "ODIN Østjylland Start Rapid Polling"
+        unique_id: odin_ostjylland_start_rapid_polling
+        icon: mdi:fire-extinguisher
+        press:
+          action: script.odin_rapid_poll_until_new_data
+          data:
+            feed_entity: sensor.odin_ostjyllands_brandvaesen_feed
+            station: Aarhus
+            hours_cutoff: 48
+            exclude_report_regex: ""
+
+      - name: "ODIN Fyn Start Rapid Polling"
+        unique_id: odin_fyn_start_rapid_polling
+        icon: mdi:fire-extinguisher
+        press:
+          action: script.odin_rapid_poll_until_new_data
+          data:
+            feed_entity: sensor.odin_beredskab_fyn_feed
+            station: Odense
+            hours_cutoff: 48
+            exclude_report_regex: ""
+
+  - trigger:
+      - trigger: homeassistant
+        id: start
+        event: start
+
+      - trigger: event
+        id: reload
+        event_type: event_template_reloaded
+
+      - trigger: state
+        id: source_updated
+        entity_id: sensor.odin_ostjyllands_brandvaesen_feed
+
+      - trigger: time_pattern
+        id: refresh
+        minutes: "/15"
+
+    sensor:
+      - name: "ODIN Østjyllands Brandvæsen Feed Summary"
+        unique_id: odin_ostjyllands_brandvaesen_feed_summary
+        icon: mdi:fire-truck
+        state: >
+          {% from 'odin.jinja' import odin_event_count %}
+          {{ odin_event_count('sensor.odin_ostjyllands_brandvaesen_feed', 'Aarhus', 24) }}
+        attributes:
+          hours_since_last_event: >
+            {% from 'odin.jinja' import odin_hours_since_last_event %}
+            {{ odin_hours_since_last_event('sensor.odin_ostjyllands_brandvaesen_feed', 'Aarhus', 24) }}
+          event_state_color: >
+            {% from 'odin.jinja' import odin_event_state_color %}
+            {{ odin_event_state_color('sensor.odin_ostjyllands_brandvaesen_feed', 'Aarhus', 24) }}
+          attribution: "Data provided by www.odin.dk/112puls/"
+
+  - trigger:
+      - trigger: homeassistant
+        id: start
+        event: start
+
+      - trigger: event
+        id: reload
+        event_type: event_template_reloaded
+
+      - trigger: state
+        id: source_updated
+        entity_id: sensor.odin_beredskab_fyn_feed
+
+      - trigger: time_pattern
+        id: refresh
+        minutes: "/15"
+
+    sensor:
+      - name: "ODIN Beredskab Fyn Odense Feed Summary"
+        unique_id: odin_beredskab_fyn_odense_feed_summary
+        icon: mdi:fire-truck
+        state: >
+          {% from 'odin.jinja' import odin_event_count %}
+          {{ odin_event_count('sensor.odin_beredskab_fyn_feed', 'Odense', 24) }}
+        attributes:
+          hours_since_last_event: >
+            {% from 'odin.jinja' import odin_hours_since_last_event %}
+            {{ odin_hours_since_last_event('sensor.odin_beredskab_fyn_feed', 'Odense', 24) }}
+          event_state_color: >
+            {% from 'odin.jinja' import odin_event_state_color %}
+            {{ odin_event_state_color('sensor.odin_beredskab_fyn_feed', 'Odense', 24) }}
+          attribution: "Data provided by www.odin.dk/112puls/"
+
+################################################################################
+# Feedparser source sensors
+################################################################################
+
+sensor:
+  - platform: feedparser
+    name: ODIN Østjyllands Brandvæsen Feed
+    feed_url: "http://odin.dk/rss/RSS.aspx?beredskabsID=1212"
+    local_time: true
+    scan_interval:
+      minutes: 15
+    inclusions:
+      - title
+      - summary
+      - published
+    date_format: "%Y-%m-%d %H:%M:%S%z"
+
+  - platform: feedparser
+    name: ODIN Beredskab Fyn Feed
+    feed_url: "http://odin.dk/rss/RSS.aspx?beredskabsID=1207"
+    local_time: true
+    scan_interval:
+      minutes: 15
+    inclusions:
+      - title
+      - summary
+      - published
+    date_format: "%Y-%m-%d %H:%M:%S%z"

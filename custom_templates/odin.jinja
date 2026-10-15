@@ -1,0 +1,165 @@
+{###############################################################################
+ # ODIN custom template macros for Home Assistant
+ ###############################################################################
+ #
+ # Purpose
+ # -------
+ # Reusable Jinja macros for enriching and filtering ODIN incident data from
+ # odin.dk RSS feeds exposed through the Feedparser custom integration.
+ #
+ # Install location
+ # ----------------
+ # config/custom_templates/odin.jinja
+ #
+ # Reload after changes
+ # --------------------
+ # Developer Tools → YAML → Reload custom templates
+ #
+ # Or call:
+ #
+ # action: homeassistant.reload_custom_templates
+ #
+ # Notes
+ # -----
+ # These macros expect Feedparser entries with:
+ #
+ #   - published
+ #   - summary
+ #   - title
+ #
+ # Recommended Feedparser date_format:
+ #
+ #   "%Y-%m-%d %H:%M:%S%z"
+ #
+ #############################################################################}
+
+{%- macro odin_incident_regex() -%}
+brand|brandalarm|redning|redn\.|drukne|forurening|fuh|gas|fly
+{%- endmacro -%}
+
+{%- macro odin_event_keys(entity_id, station='', hours_cutoff=48,
+                           exclude_report_regex='') -%}
+  {%- set cutoff_hours = hours_cutoff | float(48) -%}
+  {%- set cutoff_ts = as_timestamp(now() - timedelta(hours=cutoff_hours)) -%}
+  {%- set ns = namespace(keys=[]) -%}
+
+  {%- for event in state_attr(entity_id, 'entries') or [] -%}
+    {%- set summary = event.summary | default('', true) -%}
+    {%- set published_ts = event.published | default('', true) | as_timestamp(0) -%}
+    {%- set station_match = summary is search('(?i)(' ~ station ~ ')') -%}
+    {%- set include_match = summary is search('(?i)(' ~ odin_incident_regex() ~ ')') -%}
+    {%- set exclude_match = exclude_report_regex | trim != ''
+          and summary is search('(?i)(' ~ exclude_report_regex ~ ')') -%}
+    {%- if published_ts > cutoff_ts
+          and station_match and include_match and not exclude_match -%}
+      {%- set key = [
+            event.published | default('', true),
+            event.title | default('', true),
+            summary
+          ] | to_json -%}
+      {%- set ns.keys = ns.keys + [key] -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {{- ns.keys | to_json -}}
+{%- endmacro -%}
+
+{%- macro odin_has_new_event(entity_id, station, hours_cutoff,
+                              initial_event_keys_json,
+                              exclude_report_regex='') -%}
+  {%- set initial_keys = (initial_event_keys_json | from_json([]))
+        if initial_event_keys_json is string else initial_event_keys_json -%}
+  {%- set current_keys = odin_event_keys(entity_id, station, hours_cutoff,
+                                          exclude_report_regex)
+        | from_json([]) -%}
+  {%- set ns = namespace(found=false) -%}
+
+  {%- for key in current_keys -%}
+    {%- if key not in initial_keys -%}
+      {%- set ns.found = true -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {{- ns.found -}}
+{%- endmacro -%}
+
+{%- macro odin_icon(summary='') -%}
+  {%- set s = summary | default('', true) | lower -%}
+  {%- if 'brandalarm' in s -%}
+    🔔
+  {%- elif 'brand' in s -%}
+    🔥
+  {%- elif 'redning' in s or 'redn.' in s -%}
+    🚑
+  {%- elif 'forurening' in s -%}
+    🫗
+  {%- elif 'fuh' in s -%}
+    💥
+  {%- elif 'drukne' in s -%}
+    🛟
+  {%- elif 'gas' in s -%}
+    ♨
+  {%- elif 'fly' in s -%}
+    🛬
+  {%- else -%}
+    🚨
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro odin_event_count(entity_id, station='', hours_cutoff=24) -%}
+  {%- set cutoff_ts = as_timestamp(now() - timedelta(hours=hours_cutoff)) -%}
+  {%- set ns = namespace(count=0) -%}
+
+  {%- for event in state_attr(entity_id, 'entries') or [] -%}
+    {%- set summary = event.summary | default('', true) -%}
+    {%- set published_ts = event.published | default('', true) | as_timestamp(0) -%}
+    {%- if published_ts > cutoff_ts
+          and summary is search('(?i)' ~ station)
+          and summary is search('(?i)(' ~ odin_incident_regex() ~ ')') -%}
+      {%- set ns.count = ns.count + 1 -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {{- ns.count -}}
+{%- endmacro -%}
+
+{%- macro odin_hours_since_last_event(entity_id, station='', hours_cutoff=24) -%}
+  {%- set cutoff_ts = as_timestamp(now() - timedelta(hours=hours_cutoff)) -%}
+  {%- set ns = namespace(latest=0) -%}
+
+  {%- for event in state_attr(entity_id, 'entries') or [] -%}
+    {%- set summary = event.summary | default('', true) -%}
+    {%- set published_ts = event.published | default('', true) | as_timestamp(0) -%}
+    {%- if published_ts > cutoff_ts
+          and published_ts > ns.latest
+          and summary is search('(?i)' ~ station)
+          and summary is search('(?i)(' ~ odin_incident_regex() ~ ')') -%}
+      {%- set ns.latest = published_ts -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {{- '' if ns.latest == 0 else ((now().timestamp() - ns.latest) // 3600) | int(0) -}}
+{%- endmacro -%}
+
+
+{%- macro odin_event_state_color(entity_id, station='', hours_cutoff=24) -%}
+  {%- set hours = odin_hours_since_last_event(entity_id, station, hours_cutoff) | float(-1) -%}
+
+  {%- if hours < 0 -%}
+    var(--state-icon-color)
+  {%- elif hours > 18 -%}
+    var(--state-icon-color)
+  {%- elif hours > 12 -%}
+    #6f7f8f
+  {%- elif hours > 8 -%}
+    #8fa6b8
+  {%- elif hours > 4 -%}
+    #d8a64f
+  {%- elif hours > 2 -%}
+    #d8834a
+  {%- elif hours > 0.5 -%}
+    #c85f4d
+  {%- else -%}
+    #d64545
+  {%- endif -%}
+{%- endmacro -%}

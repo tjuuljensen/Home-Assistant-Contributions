@@ -15,7 +15,8 @@
 !packages/pollen_denmark/
 !packages/pollen_denmark/images/
 !packages/zone_registration/
-!lovelace/
+!packages/odin_feedparser/
+!custom_templates/
 !python_scripts/
 !utils/
 
@@ -26,6 +27,8 @@
 !*.sh
 !*.ps1
 !*.drawio
+!custom_templates/odin.jinja
+!custom_templates/battery_alert.jinja
 
 !LICENSE
 !.gitignore
