@@ -2,8 +2,6 @@
 # ODIN Feedparser Package for Home Assistant
 ################################################################################
 #
-# Public example: replacement locations; see the companion README.
-#
 # Purpose
 # -------
 # This package consumes ODIN RSS feeds from odin.dk using the Feedparser custom
@@ -73,23 +71,23 @@
 #    # Configure the card like this:
 #    #
 #    # header: Title of page if string is not empty.
-#    # station: The stations(s) to display. Multiple entries can be delimited with a pipe, ex.: 'Aarhus|Skanderborg'
+#    # station: The stations(s) to display. Multiple entries can be delimited with a pipe, ex.: 'Østjylland|Aarhus'
 #    # odin_entity: Feedparser entity. Expects date formatting: '%Y-%m-%d %H:%M:%S%z'
 #    # remove_station: Remove station name from report text.
 #    # hours_cutoff: How many hours to display.
 #    #}
 #   {% from 'odin.jinja' import odin_icon, odin_incident_regex %}
-#
+# 
 #   {% set header = 'Østjyllands Brandvæsen: Aarhus 🚨' %}
 #   {% set station = 'Aarhus' %}
 #   {% set odin_entity = 'sensor.odin_ostjyllands_brandvaesen_feed' %}
 #   {% set remove_station = true %}
 #   {% set hours_cutoff = 48 %}
-#
+# 
 #   {% set entries = state_attr(odin_entity, 'entries') or [] %}
 #   {% set cutoff_ts = as_timestamp(now() - timedelta(hours=hours_cutoff)) %}
 #   {% set title = header if header != '' else (entries[0].title ~ ': ' ~ station if entries | count > 0 else station) %}
-#
+# 
 #   {% set ns = namespace(filtered=[]) %}
 #   {% for e in entries %}
 #     {% set summary = e.summary | default('', true) %}
@@ -100,9 +98,9 @@
 #       {% set ns.filtered = ns.filtered + [e] %}
 #     {% endif %}
 #   {% endfor %}
-#
+# 
 #   ## {{ title }}
-#
+# 
 #   {% if ns.filtered | length > 0 %}
 #   <table>
 #     <thead>
@@ -133,7 +131,7 @@
 #   {% else %}
 #   _No events in the last {{ hours_cutoff }} hours._
 #   {% endif %}
-#
+# 
 #   Source: [Beredskabsstyrelsen](http://www.odin.dk/112puls/ "ODIN - Online Dataregistrerings- og INdberetningssystem")
 #
 ################################################################################

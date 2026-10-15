@@ -1,0 +1,106 @@
+{#-
+  Shared battery alert selection and message templates.
+
+  Purpose:
+    Select monitored battery sensors, classify numeric-low and unavailable
+    entities, and build the daily notification text used by
+    packages/battery_alert.yaml.
+
+  Usage:
+    {% from 'battery_alert.jinja' import battery_alert_data, battery_alert_message %}
+    {% set data = battery_alert_data(15, true) | from_json(default={}) %}
+    {{ battery_alert_message(data) }}
+
+  Inputs:
+    threshold: Inclusive upper limit for numeric battery alerts.
+    include_unavailable: Include unknown and unavailable sensors in the alert.
+
+  Selection rules:
+    - Sensor domain with device_class battery.
+    - Hidden, restored, and battery_alert_disabled entities are excluded.
+
+  Output:
+    battery_alert_data returns JSON with sorted low and unavailable lists.
+    battery_alert_message returns a human-readable multi-line summary.
+
+  Prerequisites:
+    Home Assistant custom template support.
+-#}
+
+{%- macro battery_alert_data(threshold, include_unavailable=false) -%}
+  {%- set limit = threshold | float(15) -%}
+  {%- set result = namespace(low=[], unavailable=[]) -%}
+
+  {%- for sensor in states.sensor
+        | selectattr('attributes.device_class', 'eq', 'battery') -%}
+    {%- set excluded =
+          is_hidden_entity(sensor.entity_id)
+          or sensor.attributes.get('battery_alert_disabled', false)
+          or sensor.attributes.get('restored', false) -%}
+    {%- if not excluded -%}
+      {%- set name = device_name(sensor.entity_id)
+            | default(sensor.name, true)
+            | default(sensor.entity_id, true) -%}
+      {%- set area = area_name(sensor.entity_id) | default('', true) -%}
+      {%- if is_number(sensor.state) and sensor.state | float(101) <= limit -%}
+        {%- set result.low = result.low + [dict(
+              entity_id=sensor.entity_id,
+              name=name,
+              area=area,
+              value=sensor.state | float,
+              display=states(sensor.entity_id, rounded=true, with_unit=true)
+            )] -%}
+      {%- elif sensor.state | lower in ['unknown', 'unavailable'] -%}
+        {%- set result.unavailable = result.unavailable + [dict(
+              entity_id=sensor.entity_id,
+              name=name,
+              area=area,
+              state=sensor.state | lower
+            )] -%}
+      {%- endif -%}
+    {%- endif -%}
+  {%- endfor -%}
+
+  {%- set low = result.low | sort(attribute='value') | list -%}
+  {%- set unavailable = result.unavailable | sort(attribute='name') | list -%}
+  {{- dict(
+        threshold=limit,
+        include_unavailable=include_unavailable,
+        low=low,
+        unavailable=unavailable,
+        low_count=low | count,
+        unavailable_count=unavailable | count,
+        attention_count=(low | count) + ((unavailable | count) if include_unavailable else 0)
+      ) | to_json -}}
+{%- endmacro -%}
+
+{%- macro battery_alert_message(data) -%}
+  {%- set low = data.get('low', []) if data is mapping else [] -%}
+  {%- set unavailable = data.get('unavailable', []) if data is mapping else [] -%}
+  {%- set include_unavailable = data.get('include_unavailable', false)
+        if data is mapping else false -%}
+  {%- set output = namespace(lines=[]) -%}
+  {%- if low | count > 0 -%}
+    {%- set output.lines = output.lines + ['Low batteries:'] -%}
+    {%- for item in low %}
+      {%- set location = ' - ' ~ item.area if item.area else '' -%}
+      {%- set output.lines = output.lines
+            + ['- ' ~ item.name ~ location ~ ': ' ~ item.display] -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- if include_unavailable and unavailable | count > 0 -%}
+    {%- if output.lines | count > 0 -%}
+      {%- set output.lines = output.lines + [''] -%}
+    {%- endif -%}
+    {%- set output.lines = output.lines + ['Unavailable battery sensors:'] -%}
+    {%- for item in unavailable -%}
+      {%- set location = ' - ' ~ item.area if item.area else '' -%}
+      {%- set output.lines = output.lines
+            + ['- ' ~ item.name ~ location ~ ': ' ~ item.state] -%}
+    {%- endfor -%}
+  {%- endif -%}
+  {%- if low | count == 0 and (not include_unavailable or unavailable | count == 0) -%}
+    {%- set output.lines = ['All monitored batteries are healthy.'] -%}
+  {%- endif -%}
+  {{- output.lines | join('\n') -}}
+{%- endmacro -%}

@@ -91,7 +91,7 @@ def find_includes(config_text):
     """
     Extract include directives from YAML.
     Returns a list of tuples: (mode, target).
-    Example: ("_dir_merge_list", "automations/") or ("", "include/http.yaml")
+    Example: ("_dir_merge_list", "automations/") or ("", "includes/http.yaml")
     """
     includes = []
     for line in config_text.splitlines():
