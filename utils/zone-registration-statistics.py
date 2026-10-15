@@ -6,7 +6,7 @@ Purpose:
     sensor.zone_registration_statistics without shell parsing.
 
 Behavior:
-    Preserve the former jq row counting and sorted grouping. Skip the header
+    Count CSV rows by month and year in sorted groups. Skip the header
     and final newline-split item, including an unterminated final record.
     Unreadable files return empty arrays quietly, with a successful exit.
 
@@ -24,9 +24,6 @@ Outputs / side effects:
 
 Prerequisites:
     Python and read access to the selected CSV.
-
-Ownership:
-    Maintained with the source configuration; public copies are publication outputs.
 
 Version:
     1.0.0

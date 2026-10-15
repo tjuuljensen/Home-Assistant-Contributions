@@ -44,9 +44,3 @@ python utils/ha-include-check.py --json
 Then run a Home Assistant config check in the live runtime.
 
 After editing `/config/custom_templates/odin.jinja`, reload custom templates from Developer Tools or call `homeassistant.reload_custom_templates`.
-
-## Maintenance Notes
-
-- Keep incident parsing logic in `custom_templates/odin.jinja` where possible.
-- Keep package sensors focused on normalized state and attributes.
-- The YAML header contains a Lovelace example; if it grows, move the card example to `docs/references/lovelace/`.

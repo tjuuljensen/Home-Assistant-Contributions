@@ -47,9 +47,7 @@ Prerequisites:
 Author:
     Torsten Juul-Jensen
 
-Ownership / deployment:
-    Maintained as utils/ha-include-check.py in the source configuration.
-    Publication and deployment workflows distribute this read-only helper.
+Installation:
     For a Home Assistant shell, install it as /config/utils/ha-include-check.py.
     Run Home Assistant's own configuration check before reloading or restarting.
 

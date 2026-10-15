@@ -1,9 +1,8 @@
 # ODIN Feedparser Package
 
-This public example replaces private locations with Østjyllands Brandvæsen
-(Aarhus) and Beredskab Fyn (Odense). These are demonstration choices, not the
-maintainer's location preferences. The package includes the current ODIN
-dashboard example in its YAML header.
+The example feeds cover Østjyllands Brandvæsen (Aarhus) and Beredskab Fyn
+(Odense). Select feeds and station filters for the areas you want to follow.
+The YAML header includes a Markdown dashboard card example.
 
 ## Installation
 
@@ -39,7 +38,7 @@ IDs come from the [Beredskabsstyrelsen RSS address list](https://www.brs.dk/da/n
 Station areas are documented by [Østjyllands Brandvæsen](https://www.ostbv.dk/brandstationer)
 and [Beredskab Fyn](https://beredskabfyn.dk/beredskab). The filters match city
 names within report text, potentially covering multiple stations. The ODIN
-endpoint could not be reached during publication preparation on 2026-10-15;
+endpoint could not be reached during validation on 2026-10-15;
 verify current feed IDs and exact station text with the
 [ODIN feed selector](http://www.odin.dk/RSS/Getberedskab.aspx) before relying on
 these examples.
@@ -56,32 +55,16 @@ The package is primarily used for dashboard badges, Markdown cards, conditional 
 | --- | --- | --- | --- |
 | [odin_feedparser.yaml](odin_feedparser.yaml) | `/config/packages/odin_feedparser.yaml` | Required feed sensors, helpers, and polling scripts | Markdown dashboard example and settings in the YAML header |
 | [odin.jinja](../../custom_templates/odin.jinja) | `/config/custom_templates/odin.jinja` | Required incident parsing/display macros | Imported by the package; reload custom templates after installing |
-| [Generated reference](odin_feedparser.reference.md) | Documentation only | Published entities and current behavior | Adapt its example entity IDs consistently when choosing other feeds |
+| [Entity reference](odin_feedparser.reference.md) | Documentation only | Package entities and current behavior | Adapt its example entity IDs consistently when choosing other feeds |
 
-The Feedparser custom integration is required separately. No publication tools
-or replacement maps are needed in your Home Assistant installation.
+The Feedparser custom integration is required separately.
 
 ## Validation
 
 After editing this package, run Home Assistant's configuration check in your
-own installation before restarting. This contributions repository does not
-include a full Home Assistant runtime or the private configuration checker.
+own installation before restarting.
 
 After editing `/config/custom_templates/odin.jinja`, reload custom templates from Developer Tools or call `homeassistant.reload_custom_templates`.
-
-## Maintenance Notes
-
-- Keep incident parsing logic in `custom_templates/odin.jinja` where possible.
-- Keep package sensors focused on normalized state and attributes.
-- Keep the Lovelace example in the YAML header aligned with the package entities.
-
-## Publication provenance
-
-The maintained source repository owns the package and runs anonymization and
-protected-content checks before publishing this example. Its private replacement
-map, anonymizer, and tests stay in that source repository. Failed checks block
-publication. This installation guide is maintained here; the generated reference
-and runtime files are refreshed together by the source publisher.
 
 ## Attribution
 

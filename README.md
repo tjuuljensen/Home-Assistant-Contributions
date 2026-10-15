@@ -27,7 +27,7 @@ resources simplify configuration and maintenance tasks.
 | [`python_scripts/`](python_scripts/) | Scripts executed inside Home Assistant by the `python_script` integration, using its restricted runtime. |
 | [`utils/`](utils/) | Standalone maintenance programs run with Python in a terminal on Windows or Linux. |
 | [Issue templates](.github/ISSUE_TEMPLATE/) | [Bug reports](.github/ISSUE_TEMPLATE/bug_report.md) and [feature requests](.github/ISSUE_TEMPLATE/feature_request.md). |
-| [`.gitignore`](.gitignore), [LICENSE](LICENSE) | Publication allowlist and MIT license. New component directories must be allowlisted to appear in Git. |
+| [`.gitignore`](.gitignore), [LICENSE](LICENSE) | File exclusions and MIT license. |
 
 Put a Python file in `python_scripts/` only when it is intended to be called as
 `python_script.<name>` inside Home Assistant. Put ordinary Python CLI tools with
@@ -188,7 +188,7 @@ Enable packages with the [configuration.yaml example](#installation--usage). Com
 | --- | --- | --- | --- |
 | [odin_feedparser.yaml](packages/odin_feedparser/odin_feedparser.yaml) | `/config/packages/odin_feedparser.yaml` | Required: Feed sensors and polling controls; requires the Feedparser custom integration | [YAML header / configuration](packages/odin_feedparser/odin_feedparser.yaml); [setup guide](packages/odin_feedparser/odin_feedparser.README.md) |
 | [odin.jinja](custom_templates/odin.jinja) | `/config/custom_templates/odin.jinja` | Required shared template macros | Imported by the package; [macro definitions](custom_templates/odin.jinja) |
-| [Generated reference](packages/odin_feedparser/odin_feedparser.reference.md) | Documentation only; no runtime copy | Entities and behavior from the published package | [Entity reference](packages/odin_feedparser/odin_feedparser.reference.md) |
+| [Entity reference](packages/odin_feedparser/odin_feedparser.reference.md) | Documentation only; no runtime copy | Package entities and behavior | [Entity reference](packages/odin_feedparser/odin_feedparser.reference.md) |
 
 Enable packages with the [configuration.yaml example](#installation--usage). Companion READMEs and images are documentation, not runtime files.
 
@@ -266,23 +266,9 @@ configuration or credentials; keep generated output outside this public repo.
 Unused-sensor findings require review because dynamic references cannot be
 proven by static analysis.
 
-The exporter, backup unpacker, unused-sensor analyzer, include checker,
-and `set_state.py` are
-published from the maintained source repository through its allowlisted publisher. Maintainer
-changes to those files belong in that source first, then in a new publication
-batch. The unused-sensor analyzer retains its original upstream
-attribution in the script header.
-
-ODIN publication runs from the maintained source repository. Its publisher anonymizes the
-ODIN files with a private map, checks the prepared output, and blocks publication
-on validation failures. The anonymizer, its tests, and the map stay in that
-source repository; none is required to install or run ODIN.
-
-Published examples use `includes/` for include-directory paths. The publisher
-adapts recognized paths in exported copies only; it leaves the maintainer's
-source configuration unchanged. Home Assistant permits either folder name, as
-long as your paths match. Run Home Assistant's configuration check before using
-edited examples in your installation.
+Examples use `includes/` for include-directory paths. Home Assistant permits
+either folder name, as long as the paths match your installation. Run Home
+Assistant's configuration check before using edited examples.
 
 ### Check include references before maintenance
 
